@@ -1,0 +1,7 @@
+# Challenge data: synthetic, Junction 2026 use only. Re-download with scripts/fetch_data.sh
+data/raw/
+.env
+.env.*
+node_modules/
+.venv/
+__pycache__/
