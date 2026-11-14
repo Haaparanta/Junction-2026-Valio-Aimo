@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Approval, Me } from "../api";
 import {
-  approvalIdFromPath, approvalNote, buyerOutcome, cleanComment, decisionMessage, isFinal, isPending, screenFor,
+  approvalIdFromPath, approvalNote, approverLabel, buyerOutcome, cleanComment, decisionMessage, isFinal, isPending,
+  screenFor,
 } from "./approvals";
+
+describe("approverLabel", () => {
+  it("names the generic approver role as the buyer's manager", () => {
+    expect(approverLabel("approver")).toBe("your manager");
+    expect(approverLabel("head_chef")).toBe("head chef");
+  });
+});
 
 const me = (role: string): Me => ({
   buyer_id: "x", display_name: "X", org_id: "kitchen-42", role, order_cap_eur: "500.00", as_of: "2026-11-14T08:00:00+02:00",

@@ -8,6 +8,9 @@ import type { Approval, Decision, Me, Msg } from "../api";
 export type Tone = "ok" | "warn" | "bad";
 export type Outcome = { tone: Tone; title: string; detail: string };
 
+/** Who decides, for the buyer: the gateway's generic role "approver" reads as "your manager". */
+export const approverLabel = (role: string) => (role === "approver" ? "your manager" : role.replace(/_/g, " "));
+
 export const isPending = (status: string) => status === "requires_escalation";
 export const isFinal = (status: string) => status === "completed" || status === "canceled";
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useConversationControls } from "@elevenlabs/react";
 import { api, errorText, eur, helsinki, type Offer, type Order, type OrderResponse, type QuoteLine } from "../api";
-import { APPROVAL_NUDGE, approvalNote, buyerOutcome, isFinal } from "../approvals/approvals";
+import { APPROVAL_NUDGE, approvalNote, approverLabel, buyerOutcome, isFinal } from "../approvals/approvals";
 import "../approvals/approvals.css";
 import { AuditTimeline } from "../approvals/AuditTimeline";
 import { Reason } from "../approvals/Reason";
@@ -449,7 +449,7 @@ export function ApprovalCard() {
       {pending && (
         <>
           <ul className="reasons">{a.approval.reasons.map((r) => <li key={r}><Reason text={r} /></li>)}</ul>
-          <p>Decide by {when(a.approval.decide_by)} · approver: {a.approval.approver_role.replace("_", " ")}</p>
+          <p>Decide by {when(a.approval.decide_by)} · approver: {approverLabel(a.approval.approver_role)}</p>
           <p className="muted">Approvals happen only on the manager's own console. Nobody can approve by voice.</p>
         </>
       )}
