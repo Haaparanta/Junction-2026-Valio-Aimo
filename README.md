@@ -14,7 +14,7 @@ The joke version is **Mansikki the cow**. She moos instead of talking but uses t
 
 The same gateway is open to any AI agent over MCP and OpenAPI.
 
-> Status: the voice vertical slice works end to end on contract stubs (canned W-03 answers). Real search, offers, quotes, policy and orders are M2–M9. See the plan.
+> Status: the voice vertical slice works end to end on contract stubs (canned W-03 answers). The basket (M21–M28) is on `main`: several products, filled by voice, clicks, an Excel or CSV list, a photo of a list or a dish, then one quote. The live agent learns the basket tools after the next `provision.py push`. Real search, offers, quotes, policy and orders are M2–M9. See the plans and [the basket status](docs/basket-plan.md#status).
 
 ## Docs
 
@@ -52,7 +52,7 @@ You need uv, pnpm 12, Node 22+, ngrok and an ElevenLabs account. Keys live only 
 
 | File | Holds | Written by |
 |---|---|---|
-| `.env` | `VALIO_AIMO_API_KEY` | you |
+| `.env` | `VALIO_AIMO_API_KEY`, and `ANTHROPIC_API_KEY` if you have no `ant auth login` profile | you |
 | `.env.local` | `ELEVENLABS_API_KEY` | `npx -y @elevenlabs/cli@latest onboard init` |
 | `.env.gateway` | `GATEWAY_PLATFORM_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_WEBHOOK_SECRET`, `PUBLIC_HOST` | `scripts/gen_secrets.py`, `agent/provision.py` |
 
@@ -99,3 +99,18 @@ python3 scripts/record_fixtures.py
 ```
 
 Tests: `uv run pytest`, `pnpm test`, `pnpm typecheck`. CI runs on Google Cloud Build (`cloudbuild.yaml`), not GitHub Actions; see [docs/deploy.md](docs/deploy.md#ci-and-continuous-deploy-cloud-build).
+
+## Fill the basket
+
+Aino adds each product you name to one basket, once `provision.py push` has given the live agent the basket tools. You can also fill it on screen:
+
+| Way in | How |
+|---|---|
+| Clicks | **Add to basket** on an option card. Click a line's amount, unit, date or product to change it; × removes it, with **Undo**. |
+| Excel or CSV | **Import list**, or drop the file. Start from `web/public/tilauslista-pohja.csv` or `GET /v1/baskets/template.xlsx`. |
+| A photo of a list | **Photo to basket**. Claude reads the list; a date written on it dates every line. The photo is not stored. |
+| A dish | **Dish to basket**, or tell Aino, for example *"mansikkakakku 40 hengelle maanantaiksi"*. Claude plans the ingredients, which takes about 40 s. |
+
+Then press **Get one quote for all**. The gateway prices every line, and quotes the basket only when no line still needs a choice, an amount or a later date.
+
+The photo and the dish need Anthropic credentials in the gateway: `ANTHROPIC_API_KEY` in `.env`, or locally just `ant auth login`. Without them those two routes answer 503 and everything else works. On Cloud Run the key is a secret; see [docs/deploy.md](docs/deploy.md#anthropic-key-photo-and-dish).
