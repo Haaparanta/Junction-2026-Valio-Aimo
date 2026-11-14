@@ -56,7 +56,7 @@ export type BasketDish = {
 export type Basket = {
   basket_id: string; buyer_id: string; status: "open" | "ordered"; version: number; lines: BasketLine[];
   counts: Record<string, number>; total_net: string; total_vat: string; total_gross: string; quote_id: string;
-  quote_stale: boolean; dishes: BasketDish[]; created_at: string; updated_at: string;
+  quote_stale: boolean; dishes: BasketDish[]; dish_jobs: string[]; created_at: string; updated_at: string;
 };
 /** PATCH body for a line: 0 and "" mean "keep the current value" (flat schema, no optional fields). */
 export type BasketLinePatch = { amount: number; unit: "" | Unit; need_date: string; offer_id: string };
@@ -76,7 +76,13 @@ export type ImportResponse = Envelope & {
   basket_id: string; basket: Basket; rows: ImportRow[]; counts: Record<string, number>;
   extraction: ListExtraction | null;
 };
-export type DishResponse = Envelope & { basket_id: string; basket: Basket; dish: BasketDish };
+/** dish is null when Claude refused or found no ingredients (reason_code not_found). */
+export type DishResponse = Envelope & { basket_id: string; basket: Basket; dish: BasketDish | null };
+export type DishJobState = "pending" | "running" | "done" | "failed";
+/** plan_dish (voice) answers at once; the open page runs the job and polls it (Claude needs 35-51 s). */
+export type DishJobResponse = Envelope & {
+  job_id: string; basket_id: string; state: DishJobState; result: DishResponse | null;
+};
 export type Approval = {
   status: string; approval_id: string; message_for_user: Msg;
   approval: { approval_id: string; status: string; order_id: string; quote_id: string; reasons: string[]; decide_by: string; approver_role: string };

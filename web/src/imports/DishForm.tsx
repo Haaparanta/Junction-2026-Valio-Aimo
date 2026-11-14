@@ -55,6 +55,24 @@ export function DishHeader({ dish }: { dish: BasketDish }) {
   );
 }
 
+/**
+ * No dish came back (reason_code not_found: Claude refused, or found no ingredients). The gateway's message and its
+ * warnings take the place of the dish header; nothing was added to the basket.
+ */
+export function NoDish({ response }: { response: DishResponse }) {
+  return (
+    <div className="intake-dish-head intake-no-dish" role="note">
+      <p className="intake-dish-name">No dish was planned</p>
+      <p>{response.message_for_user.en || "No ingredients came back for this dish. Nothing was added to the basket."}</p>
+      {response.warnings.length > 0 && (
+        <div className="intake-warnings">
+          <ul>{response.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DishForm({ basketId, asOf, language, onPlanned, disabled = false }: DishFormProps) {
   const [dish, setDish] = useState("");
   const [servings, setServings] = useState("");
@@ -96,11 +114,13 @@ export function DishForm({ basketId, asOf, language, onPlanned, disabled = false
       setBusy(false);
     }
     setResult(response);
-    // The dish is in the basket: clear its name and servings so a second Send cannot add it twice by accident.
-    // The date and the diet chips stay for the next dish.
-    setDish("");
-    setServings("");
-    setTried(false);
+    if (response.dish) {
+      // The dish is in the basket: clear its name and servings so a second Send cannot add it twice by accident.
+      // The date and the diet chips stay for the next dish. With no dish, the fields stay for a fix.
+      setDish("");
+      setServings("");
+      setTried(false);
+    }
     onPlanned(response); // outside the try: a failing page callback is not a planning error
   };
 
@@ -155,11 +175,11 @@ export function DishForm({ basketId, asOf, language, onPlanned, disabled = false
           </button>
         </div>
         <p className={`intake-status intake-wide${busy ? " intake-spin" : ""}`} role="status">
-          {busy ? "Planning the dish. This can take up to a minute…" : result ? result.message_for_user.en : ""}
+          {busy ? "Planning the dish. This can take up to a minute…" : result?.dish ? result.message_for_user.en : ""}
         </p>
         {error && <p className="error intake-error intake-wide" role="alert">{error}</p>}
       </form>
-      {result && <DishHeader dish={result.dish} />}
+      {result && (result.dish ? <DishHeader dish={result.dish} /> : <NoDish response={result} />)}
     </section>
   );
 }

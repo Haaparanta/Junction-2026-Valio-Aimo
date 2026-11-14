@@ -15,7 +15,7 @@ export function line(over: Partial<BasketLine> & { line_id: number }): BasketLin
 export function basket(lines: BasketLine[], over: Partial<Basket> = {}): Basket {
   return {
     basket_id: "B-0A1B2C3D4E", buyer_id: "chef", status: "open", version: 4, lines, counts: {},
-    total_net: "642.10", total_vat: "154.10", total_gross: "796.20", quote_id: "", quote_stale: false, dishes: [],
+    total_net: "642.10", total_vat: "154.10", total_gross: "796.20", quote_id: "", quote_stale: false, dishes: [], dish_jobs: [],
     created_at: "2026-11-14T10:00:00+02:00", updated_at: "2026-11-14T10:05:00+02:00", ...over,
   };
 }

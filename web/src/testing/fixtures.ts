@@ -23,7 +23,7 @@ export function basket(over: Partial<Basket> = {}): Basket {
   return {
     basket_id: "B-0A1B2C3D4E", buyer_id: "chef", status: "open", version: 1, lines: [line()],
     counts: { priced: 1 }, total_net: "1010.00", total_vat: "141.40", total_gross: "1151.40", quote_id: "",
-    quote_stale: false, dishes: [], created_at: "2026-11-14T15:00:00+02:00", updated_at: "2026-11-14T15:00:00+02:00",
+    quote_stale: false, dishes: [], dish_jobs: [], created_at: "2026-11-14T15:00:00+02:00", updated_at: "2026-11-14T15:00:00+02:00",
     ...over,
   };
 }

@@ -66,16 +66,29 @@ export function photoNote(response: ImportResponse): string {
   return `${note} The list was ${read.handwritten ? "handwritten" : "printed"}${unreadable}.`;
 }
 
-/** After the dish form: the dish's line count and lines that need the buyer, and the basket total from the gateway. */
-export function dishNote(response: DishResponse): string {
+/** Where a dish plan was asked for: the dish form on screen, or the agent's plan_dish (a job the page ran). */
+export type DishOrigin = "form" | "voice";
+
+/**
+ * After a dish plan: the dish's line count and lines that need the buyer, and the basket total from the gateway.
+ * A null dish (Claude refused or found nothing) says only that nothing was added, with the gateway's reason code.
+ */
+export function dishNote(response: DishResponse, origin: DishOrigin = "form"): string {
   const { basket, dish } = response;
+  const basketId = safeId(response.basket_id);
+  const who = origin === "voice" ? "The dish plan from plan_dish" : "Buyer asked for a dish on screen, but the plan";
+  if (!dish) {
+    const code = response.reason_code && CODE.test(response.reason_code) ? ` (${response.reason_code})` : "";
+    const warned = response.warnings.length ? ` The screen shows ${count(response.warnings.length, "warning", "warnings")}.` : "";
+    return `${who} found no ingredients${code}; nothing was added to basket ${basketId}.${warned}`;
+  }
   const date = safeDate(dish.need_date);
   const ids = new Set(dish.line_ids);
   const dishLines = basket.lines.filter((l) => ids.has(l.line_id)).map((l) => ({ line_id: l.line_id, status: l.status }));
   const what = `${count(dish.servings, "serving", "servings")}${date ? `, delivery ${date}` : ""}`;
   const added = dish.line_ids.length
-    ? `${count(dish.line_ids.length, "line", "lines")} added to basket ${safeId(response.basket_id)} (${numbered("line", dish.line_ids)})`
-    : `no lines added to basket ${safeId(response.basket_id)}`;
+    ? `${count(dish.line_ids.length, "line", "lines")} added to basket ${basketId} (${numbered("line", dish.line_ids)})`
+    : `no lines added to basket ${basketId}`;
   const parts = [added, ...openParts(dishLines)];
   const total = safeMoney(basket.total_net);
   const partial = basket.lines.some((l) => l.status !== "priced");
@@ -85,5 +98,6 @@ export function dishNote(response: DishResponse): string {
     dish.assumptions.length ? count(dish.assumptions.length, "assumption", "assumptions") : "",
   ].filter(Boolean);
   const screen = shown.length ? ` The screen shows the dish's ${shown.join(" and ")}.` : "";
-  return `Buyer planned a dish on screen for ${what}: ${parts.join("; ")}.${totalText}${screen}`;
+  const head = origin === "voice" ? "The dish plan from plan_dish is done" : "Buyer planned a dish on screen";
+  return `${head} for ${what}: ${parts.join("; ")}.${totalText}${screen}`;
 }
