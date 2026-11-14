@@ -57,10 +57,10 @@ In a git worktree these files must be in the worktree's own root.
    uv sync && pnpm install && python3 scripts/gen_secrets.py
    ```
 
-2. Start the gateway (terminal 1):
+2. Start the gateway (terminal 1). It loads `.env.local` explicitly; `.env` and `.env.gateway` are read by the settings:
 
    ```bash
-   uv run uvicorn app.main:app --app-dir gateway --port 8000 --reload
+   pnpm gateway
    ```
 
 3. Open a public URL so ElevenLabs can call the webhook tools (terminal 2):
