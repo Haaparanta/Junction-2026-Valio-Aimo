@@ -98,6 +98,48 @@ button.intake-row-btn:disabled {
 .intake-unreadable { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.2rem; overflow-wrap: anywhere; }
 .chip.intake-kind { background: var(--yellow); }
 
+/* ---- Dish to basket ---- */
+.intake-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: 0.8rem; align-items: start; }
+.intake-form .intake-wide { grid-column: 1 / -1; }
+.intake-field { display: grid; gap: 0.3rem; min-width: 0; }
+.intake-field label, .intake-diets legend { font-weight: 700; }
+.intake-field input {
+  width: 100%; min-width: 0; min-height: 2.75rem; font: inherit; font-weight: 500; color: var(--ink);
+  background: var(--panel); padding: 0.5rem 0.7rem; border: var(--bw) solid var(--ink); border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+}
+.intake-field input[aria-invalid="true"] { background: #fff0f0; border-color: #b00020; }
+.intake.card p.intake-field-error { color: #b00020; font-weight: 700; font-size: 0.9rem; }
+.intake-diets { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 0.45rem; }
+.intake-diets legend { padding: 0; margin-bottom: 0.45rem; }
+.intake-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+button.intake-diet { border-radius: 999px; padding: 0.35rem 0.85rem; font-size: 0.9rem; }
+button.intake-diet[aria-pressed="true"] { background: var(--lime); }
+button.intake-diet[aria-pressed="true"]::before { content: "✓ "; }
+.intake.card p.intake-help { color: var(--muted); font-size: 0.85rem; }
+
+/* The dish header, in the dish card and on the basket card */
+div.intake-dish-head {
+  display: grid; gap: 0.45rem; min-width: 0; padding: 0.75rem 0.85rem; background: #fffbea;
+  border: var(--bw) solid var(--ink); border-radius: var(--r); box-shadow: var(--shadow-sm); overflow-wrap: anywhere;
+}
+div.intake-dish-head p { margin: 0; }
+div.intake-dish-head p.intake-dish-name { font-family: var(--display); font-size: 1.2rem; line-height: 1.2; }
+div.intake-dish-head p.intake-dish-name span { font-family: "Space Grotesk", sans-serif; font-weight: 700; font-size: 1rem; color: var(--muted); }
+div.intake-dish-head p.intake-dish-meta { font-weight: 700; }
+div.intake-dish-head ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.2rem; }
+.intake-warnings {
+  display: grid; gap: 0.3rem; padding: 0.55rem 0.7rem; font-weight: 700; background: var(--orange);
+  border: var(--bw) solid var(--ink); border-radius: var(--r); box-shadow: var(--shadow-sm);
+}
+div.intake-dish-head p.intake-warn-head { font-family: var(--display); font-size: 0.95rem; text-transform: uppercase; }
+div.intake-dish-head p.intake-warn-head::before {
+  content: "!"; display: inline-grid; place-items: center; width: 1.3em; height: 1.3em; margin-right: 0.45em;
+  background: var(--ink); color: var(--orange); border-radius: 50%;
+}
+.intake-assumptions { display: grid; gap: 0.25rem; color: var(--muted); font-size: 0.92rem; }
+div.intake-dish-head p.intake-assume-head { font-weight: 700; color: var(--ink); }
+
 @media (max-width: 600px) {
   .intake-drop { padding: 1rem 0.75rem; }
   .intake-drop.large { min-height: 9rem; }
