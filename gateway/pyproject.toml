@@ -19,6 +19,10 @@ dependencies = [
   "rfc8785==0.1.4",
   "rapidfuzz==3.14.6",
   "ijson==3.6.0",
+  # Basket imports and the Claude calls (docs/basket-plan.md B-08, B-09).
+  "anthropic==2.8.0",
+  "openpyxl==3.1.5",
+  "python-multipart==0.0.33",
 ]
 
 [build-system]

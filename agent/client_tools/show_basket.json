@@ -1,0 +1,13 @@
+{
+  "type": "client",
+  "name": "show_basket",
+  "description": "Show the basket on the buyer's screen: its lines, their status and the gateway total. Call right after add_to_basket, update_basket_line, remove_basket_line or plan_dish. Pass the id only.",
+  "expects_response": false,
+  "parameters": {
+    "type": "object",
+    "required": ["basket_id"],
+    "properties": {
+      "basket_id": {"type": "string", "description": "basket_id exactly as returned by add_to_basket, get_basket or plan_dish."}
+    }
+  }
+}

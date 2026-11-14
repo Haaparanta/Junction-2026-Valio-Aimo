@@ -21,6 +21,7 @@ The same gateway is open to any AI agent over MCP and OpenAPI.
 | Document | What it covers |
 |---|---|
 | [docs/PLAN.md](docs/PLAN.md) | The solution, the demo script, and 20 milestones with sub-milestones, owners, estimates and acceptance checks. Also timeline, cut lines and risks. |
+| [docs/basket-plan.md](docs/basket-plan.md) | M21–M29: one basket filled by voice, clicks, Excel/CSV, a photo of a list or a dish, then one quote. Decisions that join the three briefs in [docs/briefs/](docs/briefs/), build order, cut lines. |
 | [docs/data-and-api-findings.md](docs/data-and-api-findings.md) | What the product data and the mock price/availability API really do: traps, formulas, worked example, exception fixtures, mentor questions. |
 | [docs/tech-research.md](docs/tech-research.md) | Fact-checked notes on ElevenLabs Agents, the React SDK and avatar lip-sync, cow audio, the Python gateway stack and open agent-commerce standards, with version pins. |
 | [docs/reference/](docs/reference/) | Copies of the challenge OpenAPI spec and the product JSON Schema (both sit behind the portal login). |
@@ -97,4 +98,4 @@ Record fixtures before Sun 15.11 17:00 Helsinki time. `data/fixtures/` stays git
 python3 scripts/record_fixtures.py
 ```
 
-Tests: `uv run pytest`, `pnpm test`, `pnpm typecheck`.
+Tests: `uv run pytest`, `pnpm test`, `pnpm typecheck`. CI runs on Google Cloud Build (`cloudbuild.yaml`), not GitHub Actions; see [docs/deploy.md](docs/deploy.md#ci-and-continuous-deploy-cloud-build).

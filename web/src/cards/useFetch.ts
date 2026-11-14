@@ -1,14 +1,21 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Fetch by id; refetch every `pollMs` when given (approval status, PLAN M9.2). */
+/**
+ * Fetch by id; refetch every `pollMs` when given (approval status, PLAN M9.2), or on `reload()`.
+ * A new id starts empty, so a card never shows the previous id's data under the new one.
+ */
 export function useFetch<T>(id: string | null, load: (id: string) => Promise<T>, pollMs?: number) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const lastId = useRef<string | null>(null);
   useEffect(() => {
-    if (!id) {
+    if (lastId.current !== id) {
+      lastId.current = id;
       setData(null);
-      return;
+      setError(null);
     }
+    if (!id) return;
     let alive = true;
     const run = () =>
       load(id).then(
@@ -21,6 +28,7 @@ export function useFetch<T>(id: string | null, load: (id: string) => Promise<T>,
       alive = false;
       if (t) clearInterval(t);
     };
-  }, [id, load, pollMs]);
-  return { data, error };
+  }, [id, load, pollMs, nonce]);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  return { data, error, reload };
 }

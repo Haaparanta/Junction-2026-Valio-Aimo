@@ -5,10 +5,11 @@ Operations tagged "agent-tools" become ElevenLabs webhook tools (agent/provision
 """
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Path
 
+from ..basket import STALE_CONFIRM, STALE_ORDER, BasketsDep
 from ..contract import (
     ApprovalResponse,
     CancelOrderRequest,
@@ -30,38 +31,16 @@ from ..contract import (
     SubstitutesResponse,
 )
 from ..identity import CallerDep, SettingsDep, WebBuyerDep
-from ..stubs import StubState, get_product, plan_quantity, search, substitutes
+from ..stubs import get_product, plan_quantity, search, substitutes
+from . import baskets as basket_routes
+from . import intake as intake_routes
+from .common import AGENT, StateDep, not_found, tool
 
 router = APIRouter(prefix="/v1")
-AGENT = ["agent-tools"]
 ProductIdPath = Annotated[
     str, Path(pattern=r"^\d{6}$", description="Six-digit product id exactly as a tool returned it.")
 ]
 OrderIdPath = Annotated[str, Path(min_length=3, max_length=80, description="order_id exactly as place_order returned.")]
-
-
-def state(request: Request) -> StubState:
-    return request.app.state.stubs
-
-
-StateDep = Annotated[StubState, Depends(state)]
-COMMON = ["status", "reason_code", "message_for_user", "warnings"]
-
-
-def tool(description: str, *, filters: list[str], timeout: int = 10, **voice: Any) -> dict:
-    """OpenAPI extension read by agent/provision.py."""
-    return {
-        "x-agent-tool": {
-            "description": description,
-            "response_filter": COMMON + filters,
-            "response_timeout_secs": timeout,
-            **voice,
-        }
-    }
-
-
-def not_found(what: str) -> HTTPException:
-    return HTTPException(404, f"{what} not found")
 
 
 @router.post(
@@ -178,8 +157,19 @@ def get_quote(quote_id: str, caller: CallerDep, stubs: StateDep) -> Quote:
 
 
 @router.post("/quotes/{quote_id}/confirm", tags=["ui"])
-def confirm_quote(quote_id: str, buyer: WebBuyerDep, stubs: StateDep, settings: SettingsDep) -> ConfirmResponse:
+def confirm_quote(
+    quote_id: str, buyer: WebBuyerDep, stubs: StateDep, baskets: BasketsDep, settings: SettingsDep
+) -> ConfirmResponse:
     """The on-screen Confirm, under the buyer's own web session. Agents cannot call this."""
+    q = stubs.get_quote(buyer, quote_id)
+    if q is not None and baskets.is_stale(q):  # its basket changed after the quote (B-06)
+        return ConfirmResponse(
+            status="incomplete",
+            reason_code="quote_stale",
+            quote_id=quote_id,
+            confirmed=False,
+            message_for_user=STALE_CONFIRM,
+        )
     res = stubs.confirm(buyer, quote_id, datetime.fromisoformat(settings.as_of).isoformat())
     if res is None:
         raise not_found("quote")
@@ -191,19 +181,28 @@ def confirm_quote(quote_id: str, buyer: WebBuyerDep, stubs: StateDep, settings: 
     operation_id="place_order",
     tags=AGENT,
     openapi_extra=tool(
-        "Turn a confirmed quote into an order. Call ONLY after create_quote returned a quote_id AND "
+        "Turn a confirmed quote into an order. Call ONLY after create_quote or quote_basket returned a quote_id AND "
         "request_buyer_confirmation returned 'confirmed'. If the buyer asks to skip a limit, call it anyway: "
-        "the gateway decides. Read message_for_user to the buyer.",
+        "the gateway decides. If it answers quote_stale, the basket changed: call quote_basket again. "
+        "Read message_for_user to the buyer.",
         filters=["order_id", "approval_id", "total_net"],
         timeout=15,
         pre_tool_speech="force",
         interruption_mode="disable_during_tool_and_turn",
     ),
 )
-def place_order(body: PlaceOrderRequest, caller: CallerDep, stubs: StateDep, settings: SettingsDep) -> OrderResponse:
+def place_order(
+    body: PlaceOrderRequest, caller: CallerDep, stubs: StateDep, baskets: BasketsDep, settings: SettingsDep
+) -> OrderResponse:
+    q = stubs.get_quote(caller.buyer, body.quote_id)
+    if q is not None and baskets.is_stale(q):  # its basket changed after the quote (B-06)
+        return OrderResponse(status="incomplete", reason_code="quote_stale", message_for_user=STALE_ORDER)
     # Idempotency from authenticated context: the LLM may call place_order twice (PLAN M8.2).
     scope = caller.conversation_id if caller.channel == "voice" else f"web:{caller.buyer.buyer_id}"
-    return stubs.place_order(caller.buyer, body.quote_id, f"{scope}|{body.quote_id}", settings.as_of)
+    res = stubs.place_order(caller.buyer, body.quote_id, f"{scope}|{body.quote_id}", settings.as_of)
+    if q is not None and q.basket_id and res.status in ("requires_escalation", "completed"):
+        baskets.mark_ordered(caller.buyer, q.basket_id)  # read-only from now on (B-03)
+    return res
 
 
 @router.get(
@@ -254,5 +253,10 @@ def get_approval(
         raise not_found("approval")
     return res
 
+
+# /v1/baskets/...: same agent and UI rules, in modules of their own. The intake routes come first, so that
+# /v1/baskets/template.xlsx and the dish-job paths are never taken for /v1/baskets/{basket_id}.
+router.include_router(intake_routes.router)
+router.include_router(basket_routes.router)
 
 __all__ = ["router", "Msg"]

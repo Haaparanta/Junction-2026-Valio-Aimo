@@ -117,7 +117,19 @@ footer { margin-top: 2.5rem; padding: 0.8rem 1rem; background: var(--panel); bor
 .cards .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
 .cards details { margin-top: 1rem; background: var(--panel); border: 2px solid var(--ink); border-radius: var(--r); padding: 0.5rem 0.8rem; }
 .cards summary { font-weight: 700; cursor: pointer; }
+.offer { display: flex; flex-direction: column; cursor: pointer; transition: transform 0.08s, box-shadow 0.08s; }
+.offer:hover { transform: translate(-2px, -2px); box-shadow: 7px 7px 0 var(--ink); }
+.offer .choose { margin-top: auto; width: 100%; background: var(--accent); }
+.offer .flags { margin-bottom: 0.8rem; }
+.offer.chosen { outline: 4px solid var(--ink); outline-offset: 3px; transform: rotate(-0.8deg); }
+.offer.chosen .choose { background: var(--lime); }
 .offer.tier-best { background: #f3ffe0; }
+.cards .hint { margin: -0.4rem 0 0.8rem; font-weight: 500; }
+.more { list-style: none; padding: 0; margin: 0.6rem 0 0; display: grid; gap: 0.5rem; }
+.more li { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.5rem 0.6rem;
+           border: 2px solid var(--ink); border-radius: var(--r); background: var(--paper); }
+.more li.chosen { background: var(--lime); }
+button.small { padding: 0.3rem 0.7rem; font-size: 0.85rem; flex-shrink: 0; }
 .offer.tier-best .tier { background: var(--lime); }
 .offer.tier-better .tier { background: var(--cyan); }
 .offer.tier-good .tier { background: var(--yellow); }
@@ -147,6 +159,213 @@ footer { margin-top: 2.5rem; padding: 0.8rem 1rem; background: var(--panel); bor
 .toast { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%) rotate(-1deg); background: var(--yellow);
          color: var(--ink); font-weight: 700; padding: 0.7rem 1rem; border: var(--bw) solid var(--ink); border-radius: var(--r);
          box-shadow: var(--shadow); max-width: calc(100% - 32px); z-index: 10; }
+
+/* Option cards: the tier chip is the select toggle; the button adds the option to the basket. */
+.offer button.tier.pick { font-family: var(--display); font-weight: 400; padding: 0.15rem 0.55rem; border-width: 2px;
+                          border-radius: 6px; box-shadow: var(--shadow-sm); }
+.offer button.tier.pick[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.cards .hint button.small { margin-left: 0.25rem; }
+
+/* Basket */
+.basket { container: basket / inline-size; background: #f7fff0; }
+.basket .tier { background: var(--lime); }
+.basket.ordered { background: var(--panel); }
+.basket.ordered .tier { background: var(--ink); color: var(--paper); }
+.basket h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+.basket h2:focus { outline: none; }
+.lines { width: 100%; border-collapse: collapse; margin: 0.4rem 0 0.6rem; }
+.lines th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.3rem 0.35rem;
+            border-bottom: var(--bw) solid var(--ink); }
+.lines td { padding: 0.55rem 0.35rem; border-bottom: 2px solid var(--ink); vertical-align: top; }
+.lines .no { width: 2rem; font-family: var(--display); }
+.lines td.amt, .lines td.date, .lines .num { width: 1%; } /* as narrow as their controls: the product gets the rest */
+.lines th.num { white-space: normal; min-width: 5.5rem; }
+.lines td.prod { min-width: 11rem; }
+.lines .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; }
+.lines .rm { width: 2.9rem; text-align: right; }
+.lines tr.line { scroll-margin: 6rem; }
+.lines tr.line:focus { outline: 3px dashed var(--blue); outline-offset: -3px; }
+.lines tr.attention td:first-child { box-shadow: inset 6px 0 0 var(--orange); }
+.lines tr.open { background: #fff1b8; }
+.lines tr.open td:first-child { box-shadow: inset 6px 0 0 var(--red); }
+.lines .flags { margin-top: 0.35rem; }
+.qty-read, .date-read { white-space: nowrap; font-weight: 700; }
+.pname { display: block; overflow-wrap: anywhere; }
+.need { display: block; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
+.units { display: block; font-size: 0.78rem; color: var(--muted); font-weight: 500; margin-top: 0.25rem; }
+.warn { display: block; font-size: 0.8rem; font-weight: 700; color: #8a3b00; margin-top: 0.25rem; }
+.line-msg { font-size: 0.85rem; margin: 0.35rem 0 0; }
+.flags li.st-priced { background: var(--lime); }
+.flags li.st-needs_choice, .flags li.st-needs_amount { background: var(--yellow); }
+.flags li.st-unmatched { background: var(--pink); }
+.flags li.st-not_deliverable { background: var(--red); }
+.flags li.st-cutoff_passed { background: var(--orange); }
+button.icon { width: 2.3rem; height: 2.3rem; padding: 0; font-size: 1.3rem; line-height: 1; }
+.totals { display: grid; gap: 0.2rem; margin: 0.6rem 0 0.2rem; }
+.totals div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.15rem 0.4rem; }
+.totals dt { font-weight: 700; }
+.totals dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.totals .total { background: var(--yellow); border: 2px solid var(--ink); border-radius: 6px; font-family: var(--display);
+                 font-size: 1.05rem; }
+.totals .total dt { font-weight: 400; }
+.counts { margin: 0.35rem 0 0.6rem; }
+.basket .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.6rem; }
+.alert { background: #ffe1e1; border: var(--bw) solid var(--ink); border-radius: var(--r); padding: 0.5rem 0.7rem;
+         font-weight: 700; }
+.warn-box, .locked, .stale-box { background: #fff1c2; border: var(--bw) solid var(--ink); border-radius: var(--r);
+                                 padding: 0.55rem 0.75rem; margin: 0.6rem 0; }
+.locked { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.locked p, .stale-box p { margin: 0 0 0.4rem; }
+.locked p { margin: 0; }
+
+/* A narrow basket (by its own width, so the two-column layout counts too): the table becomes stacked rows. */
+@container basket (max-width: 620px) {
+  .lines thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .lines, .lines tbody { display: block; }
+  .lines tr.line { display: grid; grid-template-columns: 1.8rem minmax(0, 1fr) auto; gap: 0.4rem 0.6rem; padding: 0.6rem;
+                   margin-bottom: 0.6rem; background: var(--panel); border: 2px solid var(--ink); border-radius: var(--r); }
+  .lines tr.attention { border-left: 8px solid var(--orange); }
+  .lines tr.open { background: #fff1b8; border-left-color: var(--red); }
+  .lines td { display: block; width: auto; min-width: 0; padding: 0; border: 0; }
+  .lines td.amt, .lines td.date, .lines td.num { width: auto; }
+  .lines tr.attention td:first-child, .lines tr.open td:first-child { box-shadow: none; }
+  .lines td.no { grid-column: 1; grid-row: 1; }
+  .lines td.prod { grid-column: 2; grid-row: 1; }
+  .lines td.rm { grid-column: 3; grid-row: 1; width: auto; }
+  .lines td.amt, .lines td.date, .lines td.num { grid-column: 1 / -1; }
+  .lines td.num { text-align: left; }
+  .lines td[data-label]::before { content: attr(data-label); display: block; font-size: 0.7rem; font-weight: 700;
+                                  text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+}
+
+/* Click to edit (M24a). A product name is a real button that looks like a link. */
+button.link { display: inline; padding: 0; margin: 0; border: 0; border-radius: 2px; background: none; box-shadow: none;
+              font: inherit; font-weight: 700; text-align: left; text-decoration: underline; text-decoration-thickness: 2px;
+              text-underline-offset: 3px; color: var(--ink); cursor: pointer; overflow-wrap: anywhere; }
+button.link:hover:not(:disabled), button.link:active:not(:disabled) { transform: none; box-shadow: none;
+                                                                     background: var(--yellow); }
+button.link[aria-expanded="true"] { background: var(--yellow); }
+.card h3 button.link { font-size: 1rem; line-height: 1.25; }
+select:focus-visible, summary:focus-visible, [tabindex="-1"]:focus-visible { outline: 3px dashed var(--blue);
+                                                                              outline-offset: 3px; }
+
+/* The popover: a panel in the top layer under its trigger; a bottom drawer under 600 px. */
+.pop-panel { position: absolute; inset: auto; margin: 0; width: min(24rem, calc(100vw - 32px)); max-height: min(70vh, 34rem);
+             overflow: auto; padding: 0; color: var(--ink); background: var(--panel); border: var(--bw) solid var(--ink);
+             border-radius: var(--r); box-shadow: var(--shadow); text-align: left; font-weight: 500; }
+.pop-panel:focus { outline: none; }
+.pop-panel:focus-visible { outline: 3px dashed var(--blue); outline-offset: 3px; }
+.pop-head { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; gap: 0.6rem;
+            padding: 0.5rem 0.6rem 0.5rem 0.8rem; background: var(--accent); border-bottom: var(--bw) solid var(--ink); }
+.pop-head strong { font-family: var(--display); font-weight: 400; font-size: 1rem; line-height: 1.2; overflow-wrap: anywhere; }
+.pop-close { flex-shrink: 0; width: 2rem; height: 2rem; font-size: 1.1rem; box-shadow: none; }
+.pop-body { padding: 0.7rem 0.8rem 0.9rem; display: grid; gap: 0.7rem; }
+@media (max-width: 599.98px) {
+  .pop-panel { position: fixed; inset: auto 0 0 0; width: auto; max-height: 82vh; border-width: var(--bw) 0 0;
+               border-radius: var(--r) var(--r) 0 0; box-shadow: 0 -5px 0 var(--ink); }
+}
+.details { display: grid; gap: 0.7rem; }
+.facts { display: grid; gap: 0.3rem; margin: 0; }
+.facts div { display: grid; grid-template-columns: minmax(6.5rem, 38%) 1fr; gap: 0.5rem; padding-bottom: 0.3rem;
+             border-bottom: 2px dashed #d9d0bb; }
+.facts dt { font-weight: 700; font-size: 0.85rem; }
+.facts dd { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.flag-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; font-size: 0.88rem; }
+.flag-notes li { padding: 0.35rem 0.5rem; background: var(--paper); border: 2px solid var(--ink); border-radius: 6px; }
+.alts h4 { margin: 0 0 0.4rem; font-family: var(--display); font-weight: 400; font-size: 0.95rem; }
+.alts ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.alts li { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; padding: 0.45rem 0.55rem;
+           background: var(--paper); border: 2px solid var(--ink); border-radius: var(--r); font-size: 0.88rem; }
+.alts li > span { min-width: 0; overflow-wrap: anywhere; }
+
+/* Inline editors: amount with −/+, and the delivery date. */
+.editor { display: grid; gap: 0.2rem; justify-items: start; }
+.qty-edit { display: inline-flex; align-items: stretch; border: var(--bw) solid var(--ink); border-radius: var(--r);
+       background: var(--panel); box-shadow: var(--shadow-sm); }
+.qty-edit[aria-busy="true"] { background: var(--paper); }
+.qty-edit .step { border: 0; border-radius: 0; box-shadow: none; padding: 0 0.6rem; min-width: 2.2rem; font-size: 1.1rem;
+             line-height: 1; }
+.qty-edit .step:first-child { border-right: 2px solid var(--ink); border-radius: calc(var(--r) - 3px) 0 0 calc(var(--r) - 3px); }
+.qty-edit .step:last-child { border-left: 2px solid var(--ink); border-radius: 0 calc(var(--r) - 3px) calc(var(--r) - 3px) 0; }
+.qty-edit .step:hover:not(:disabled), .qty-edit .step:active:not(:disabled) { transform: none; box-shadow: none; background: var(--accent); }
+.qty-edit input { width: 4.6rem; min-width: 0; border: 0; padding: 0.4rem 0.4rem; font: inherit; font-weight: 700;
+             text-align: right; background: transparent; color: var(--ink); font-variant-numeric: tabular-nums; }
+.qty-edit input[aria-invalid="true"] { background: #ffe1e1; }
+.qty-edit .unit, .qty-edit select { align-self: center; padding: 0 0.45rem 0 0.15rem; font-weight: 700; font-size: 0.85rem; }
+.qty-edit select { font: inherit; font-size: 0.85rem; border: 0; background: transparent; color: var(--ink); }
+.editor input[type="date"] { font: inherit; font-weight: 700; font-size: 0.9rem; padding: 0.35rem 0.45rem; color: var(--ink);
+                             background: var(--panel); border: var(--bw) solid var(--ink); border-radius: var(--r);
+                             box-shadow: var(--shadow-sm); max-width: 100%; }
+.editor input[type="date"][aria-invalid="true"] { background: #ffe1e1; }
+.editor input[readonly], .qty-edit input[readonly] { color: var(--muted); }
+.editor .pending { font-size: 0.78rem; font-weight: 700; }
+.editor .error { font-size: 0.8rem; }
+
+/* The toast can carry one action (Undo). */
+.toast { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.toast button.small { background: var(--panel); }
+
+/* Quote additions */
+.quote:focus { outline: none; }
+.quote:focus-visible { outline: 3px dashed var(--blue); outline-offset: 3px; }
+.quote .for { font-weight: 700; margin: 0 0 0.3rem; }
+.quote .sub { display: block; font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+.quote.stale { background: #f4f1e8; }
+.quote.stale table { opacity: 0.6; }
+.confirm.calm { animation: none; align-items: center; background: #fffbea; }
+.confirm.calm span { font-weight: 700; font-size: 0.9rem; }
+.note { font-weight: 700; }
+.hint button.small { margin-left: 0.3rem; }
+
+/* Click to edit (M24b): chips, the price and the units open popovers; quote lines jump to the basket line. */
+.flags li:has(> button.chip-btn) { padding: 0; }
+.flags li > button.chip-btn { display: inline-block; padding: 0.05rem 0.5rem; margin: 0; font: inherit; font-size: 0.72rem;
+                              font-weight: 700; text-transform: uppercase; color: var(--ink); background: transparent;
+                              border: 0; border-radius: 999px; box-shadow: none; min-height: 1.6rem; }
+.flags li > button.chip-btn:hover:not(:disabled), .flags li > button.chip-btn:active:not(:disabled) { transform: none;
+                                                                                                    box-shadow: none; text-decoration: underline; }
+.flags li > button.chip-btn[aria-expanded="true"] { background: var(--ink); color: var(--paper); }
+button.num-link { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.units button.units-link { font-weight: 500; font-size: inherit; color: var(--muted); text-decoration-thickness: 1px; }
+.facts .gross { background: var(--yellow); border-radius: 4px; }
+.flag-note-box, .chip-next { margin: 0; padding: 0.4rem 0.55rem; background: var(--paper); border: 2px solid var(--ink);
+                             border-radius: 6px; font-size: 0.88rem; }
+.chip-why { margin: 0; font-weight: 700; }
+.quote button.line-jump { display: inline-block; margin-bottom: 0.1rem; }
+.lines tr.line[data-flash] td { background: var(--cyan); }
+.lines tr.line[data-flash="fade"] td { animation: line-flash 1.8s ease-out forwards; }
+@keyframes line-flash { 0%, 55% { background: var(--cyan); } 100% { background: transparent; } }
+@container basket (max-width: 620px) {
+  .lines tr.line[data-flash] { background: var(--cyan); }
+  .lines tr.line[data-flash] td { background: transparent; animation: none; }
+}
+.reasons li { list-style: square; }
+button.reason-btn { text-decoration-thickness: 1px; }
+.reason-detail { margin: 0.25rem 0 0.4rem; padding: 0.4rem 0.6rem; background: var(--panel); border: 2px solid var(--ink);
+                 border-radius: 6px; }
+.reason-detail p { margin: 0.15rem 0; }
+
+/* Intake on the page: the empty state's ways in, the basket card's bar, planned dishes and line notes. */
+.empty h3.ways-title { font-size: 1rem; margin: 1.1rem 0 0.6rem; }
+.ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1.25rem; align-items: start; }
+.intake-bar { display: grid; gap: 0.6rem; margin-top: 0.9rem; padding-top: 0.8rem; border-top: 2px dashed var(--ink); }
+.intake-bar-more { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.intake-bar-more button[aria-expanded="true"] { background: var(--ink); color: var(--paper); }
+.intake-panel { min-width: 0; }
+.dishes { display: grid; gap: 0.7rem; margin: 0.4rem 0 0.8rem; }
+.read-as { margin-top: 0.2rem; }
+.chip.conf { font-size: 0.68rem; padding: 0 0.45rem; vertical-align: 0.05em; }
+.chip.conf.c-high { background: var(--lime); }
+.chip.conf.c-medium { background: var(--yellow); }
+.chip.conf.c-low { background: var(--pink); }
+.line-notes { margin: 0.3rem 0 0; padding-left: 1.1rem; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
+
+/* A plan_dish job the page runs: planning, or the gateway's reason it failed. */
+.dish-job { margin: 0.4rem 0 0.7rem; padding: 0.5rem 0.7rem; font-weight: 700; background: var(--cyan);
+            border: var(--bw) solid var(--ink); border-radius: var(--r); box-shadow: var(--shadow-sm); }
+.dish-job.failed { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem;
+                   background: #ffe1e1; }
+.dish-job.failed p { margin: 0; overflow-wrap: anywhere; }
 
 /* ---- Avatar rig. The driver writes --mouth-open, --blink, --breath and data-mouth. ---- */
 .avatar { margin: 0; text-align: center; background: var(--panel); border: var(--bw) solid var(--ink); border-radius: var(--r);
