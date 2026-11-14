@@ -11,9 +11,18 @@ const FLAG_TEXT: Record<string, string> = {
 };
 const TIER_TEXT = { best: "Best", better: "Better", good: "Good", other: "Also on time" } as const;
 
-function OfferCard({ o }: { o: Offer }) {
+/** What a click sends to the agent: the choice and its id, never a price (prices come only from the gateway). */
+export function choiceMessage(o: Offer): string {
+  const tier = o.tier === "other" ? "this" : `the ${TIER_TEXT[o.tier].toLowerCase()}`;
+  return `I choose ${tier} option: ${o.name_fi}, ${o.qty} × ${o.api_unit} (offer_id ${o.offer_id}).`;
+}
+
+type ChooseProps = { chosen: boolean; busy: boolean; onChoose: (o: Offer) => void };
+
+function OfferCard({ o, chosen, busy, onChoose }: { o: Offer } & ChooseProps) {
   return (
-    <article className={`card offer tier-${o.tier}`}>
+    <article className={`card offer tier-${o.tier}${chosen ? " chosen" : ""}`}
+             onClick={(e) => { if (!busy && !(e.target as HTMLElement).closest("button")) onChoose(o); }}>
       <header>
         <span className="tier">{TIER_TEXT[o.tier]}</span>
         <span className="pid">{o.product_id}</span>
@@ -23,21 +32,53 @@ function OfferCard({ o }: { o: Offer }) {
       <p>{o.qty} × {o.api_unit} · {o.price_per_base_unit} €/{o.base_unit.toLowerCase()}</p>
       <p>Delivery {o.delivery_date} · order by {helsinki(o.order_by)}</p>
       <ul className="flags">{o.flags.map((f) => <li key={f}>{FLAG_TEXT[f] ?? f}</li>)}</ul>
+      <button className="choose" disabled={busy} aria-pressed={chosen} onClick={() => onChoose(o)}>
+        {chosen ? "✓ Chosen" : "Choose this option"}
+      </button>
     </article>
   );
 }
 
-export function OfferCards() {
+export function OfferCards({ onChoose }: { onChoose: (text: string) => void }) {
   const id = useUi((s) => s.offerSetId);
   const { data, error } = useFetch(id, api.offerSet);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setChosen(null), [id]); // a new search starts a new choice
   if (!id) return null;
   if (error) return <p className="card error">Could not load the options: {error}</p>;
   if (!data) return <p className="card">Loading options…</p>;
+  const choose = (o: Offer) => {
+    if (busy) return;
+    setChosen(o.offer_id);
+    setBusy(true); // guard against double clicks sending the choice twice
+    setTimeout(() => setBusy(false), 2500);
+    onChoose(choiceMessage(o));
+  };
   const top = data.options.filter((o) => o.tier !== "other");
+  const more = data.options.filter((o) => o.tier === "other");
   return (
     <section aria-label="Options" className="cards">
       <h2>Options for delivery {data.options[0]?.delivery_date ?? ""}</h2>
-      <div className="row">{top.map((o) => <OfferCard key={o.offer_id} o={o} />)}</div>
+      <p className="hint">Click an option to choose it, or just say which one you want.</p>
+      <div className="row">
+        {top.map((o) => <OfferCard key={o.offer_id} o={o} chosen={chosen === o.offer_id} busy={busy} onChoose={choose} />)}
+      </div>
+      {more.length > 0 && (
+        <details>
+          <summary>More on-time options ({more.length})</summary>
+          <ul className="more">
+            {more.map((o) => (
+              <li key={o.offer_id} className={chosen === o.offer_id ? "chosen" : ""}>
+                <span><strong>{o.name_fi}</strong> · {o.qty} × {o.api_unit} · {eur(o.total_net)} excl. VAT</span>
+                <button className="choose small" disabled={busy} aria-pressed={chosen === o.offer_id} onClick={() => choose(o)}>
+                  {chosen === o.offer_id ? "✓ Chosen" : "Choose"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {data.not_offered.length > 0 && (
         <details>
           <summary>Not offered ({data.not_offered.length})</summary>

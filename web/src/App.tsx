@@ -4,11 +4,11 @@ import "@fontsource/archivo-black/400.css";
 import "@fontsource/space-grotesk/400.css";
 import "@fontsource/space-grotesk/500.css";
 import "@fontsource/space-grotesk/700.css";
-import { api, helsinki, type Me } from "./api";
+import { api, type Me } from "./api";
 import { Avatar } from "./avatar/Avatar";
 import { ApprovalCard, OfferCards, QuoteCard } from "./cards/Cards";
 import { CowController } from "./cow/CowController";
-import { PERSONAS, personaName, personaNote } from "./persona";
+import { PERSONAS, applyPersonaChrome, personaName, personaNote } from "./persona";
 import { AgentRoot } from "./voice/AgentRoot";
 import { Captions, TextBox } from "./voice/Captions";
 import { ClientTools } from "./voice/ClientTools";
@@ -47,6 +47,7 @@ function PersonaSwitch() {
 /** Mid-call persona switch: the same session continues; the agent gets a silent note with its new name. */
 function PersonaSync() {
   const persona = useUi((s) => s.persona);
+  useEffect(() => applyPersonaChrome(persona), [persona]);
   const live = useUi((s) => s.phase === "live");
   const { sendContextualUpdate } = useConversationControls();
   const last = useRef<Persona>(persona);
@@ -177,7 +178,6 @@ function Workspace({ me }: { me: Me }) {
       <header className="top">
         <span className="logo" aria-hidden="true">V</span>
         <strong className="title">Valio Aimo <span>AI ordering</span></strong>
-        <span className="badge" title="Demo clock: all cut-offs are computed at this time">⏱ As of {helsinki(me.as_of)}</span>
         <span className="who">{me.display_name}</span>
         <PersonaSwitch />
       </header>
@@ -198,7 +198,7 @@ function Workspace({ me }: { me: Me }) {
           <EmptyState onAsk={ask} />
           <ApprovalCard />
           <QuoteCard />
-          <OfferCards />
+          <OfferCards onChoose={ask} />
         </div>
       </main>
       <footer id="privacy">

@@ -117,7 +117,19 @@ footer { margin-top: 2.5rem; padding: 0.8rem 1rem; background: var(--panel); bor
 .cards .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
 .cards details { margin-top: 1rem; background: var(--panel); border: 2px solid var(--ink); border-radius: var(--r); padding: 0.5rem 0.8rem; }
 .cards summary { font-weight: 700; cursor: pointer; }
+.offer { display: flex; flex-direction: column; cursor: pointer; transition: transform 0.08s, box-shadow 0.08s; }
+.offer:hover { transform: translate(-2px, -2px); box-shadow: 7px 7px 0 var(--ink); }
+.offer .choose { margin-top: auto; width: 100%; background: var(--accent); }
+.offer .flags { margin-bottom: 0.8rem; }
+.offer.chosen { outline: 4px solid var(--ink); outline-offset: 3px; transform: rotate(-0.8deg); }
+.offer.chosen .choose { background: var(--lime); }
 .offer.tier-best { background: #f3ffe0; }
+.cards .hint { margin: -0.4rem 0 0.8rem; font-weight: 500; }
+.more { list-style: none; padding: 0; margin: 0.6rem 0 0; display: grid; gap: 0.5rem; }
+.more li { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.5rem 0.6rem;
+           border: 2px solid var(--ink); border-radius: var(--r); background: var(--paper); }
+.more li.chosen { background: var(--lime); }
+button.small { padding: 0.3rem 0.7rem; font-size: 0.85rem; flex-shrink: 0; }
 .offer.tier-best .tier { background: var(--lime); }
 .offer.tier-better .tier { background: var(--cyan); }
 .offer.tier-good .tier { background: var(--yellow); }
