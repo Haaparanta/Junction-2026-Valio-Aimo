@@ -19,6 +19,7 @@ import { STEPS, stepReached } from "./steps";
 import { AgentRoot } from "./voice/AgentRoot";
 import { Captions, TextBox } from "./voice/Captions";
 import { ClientTools } from "./voice/ClientTools";
+import { DishJobRunner } from "./voice/DishJobRunner";
 import { focusBasket, toastActionOf, ui, upsertTurn, useUi, type Persona } from "./voice/store";
 import { useSession } from "./voice/useSession";
 
@@ -299,6 +300,7 @@ export function App() {
   return (
     <AgentRoot>
       <ClientTools />
+      <DishJobRunner />
       <CowController />
       <PersonaSync />
       <QueuedSender />

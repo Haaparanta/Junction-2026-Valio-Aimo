@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { basket } from "../testing/fixtures";
+import { newJob } from "./dishJobs";
 import {
-  createStore, focusBasket, initialUi, intakeOf, optionsFor, quoteLoaded, receiveBasket, receiveImport, showQuote, showToast,
-  toastActionOf,
+  createStore, dismissJob, focusBasket, initialUi, intakeOf, jobsForBasket, markAnnounced, optionsFor, putJob, quoteLoaded,
+  receiveBasket, receiveImport, showQuote, showToast, toastActionOf,
   type Ui,
 } from "./store";
 
@@ -129,5 +130,33 @@ describe("receiveImport", () => {
     expect(receiveImport(state(), "photo", answer(0))).toEqual({});
     const inFocus = state({ basketId: "B-0A1B2C3D4E" });
     expect(receiveImport(inFocus, "photo", answer(0)).intake?.kind).toBe("photo");
+  });
+});
+
+describe("dish jobs in the store", () => {
+  const job = (id: string, phase: "running" | "polling" | "done" | "failed", basketId = "B-0A1B2C3D4E") =>
+    ({ ...newJob(id, basketId, "running", 0), phase });
+
+  it("keeps a job's announced mark across updates, and dismisses it", () => {
+    let s = state({ ...putJob(state(), job("DJ-1", "running")) });
+    s = state({ ...s, ...markAnnounced(s, "DJ-1") });
+    s = state({ ...s, ...putJob(s, job("DJ-1", "done")) });
+    expect(s.dishJobs["DJ-1"]).toMatchObject({ phase: "done", announced: true });
+    expect(markAnnounced(s, "DJ-1")).toEqual({});
+    expect(dismissJob(s, "DJ-1")).toEqual({ dishJobs: {} });
+    expect(dismissJob(s, "DJ-9")).toEqual({});
+  });
+
+  it("the basket card plans while the basket lists an unfinished job or one of its jobs runs", () => {
+    const b = basket({ dish_jobs: ["DJ-1"] });
+    expect(jobsForBasket({}, b).planning).toBe(true); // listed, not started yet
+    expect(jobsForBasket({ "DJ-1": job("DJ-1", "polling") }, b).planning).toBe(true);
+    expect(jobsForBasket({ "DJ-1": job("DJ-1", "done") }, b).planning).toBe(false); // the basket is about to refresh
+    const none = basket({ dish_jobs: [] });
+    expect(jobsForBasket({ "DJ-2": job("DJ-2", "running") }, none).planning).toBe(true);
+    expect(jobsForBasket({ "DJ-2": job("DJ-2", "running", "B-FFFFFFFFFF") }, none).planning).toBe(false);
+    const failed = jobsForBasket({ "DJ-3": { ...job("DJ-3", "failed"), message: "AI unavailable." } }, none);
+    expect(failed.notices).toEqual([{ jobId: "DJ-3", text: "AI unavailable." }]);
+    expect(jobsForBasket({}, null)).toEqual({ planning: false, notices: [] });
   });
 });

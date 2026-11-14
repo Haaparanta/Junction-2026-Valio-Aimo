@@ -168,6 +168,15 @@ export const api = {
     }),
   /** One quote for the whole basket. reason_code basket_incomplete: resolve open_lines first. */
   quoteBasket: (basketId: string) => call<BasketQuoteResponse>("POST", "/v1/baskets/quote", { basket_id: basketId }),
+
+  // ---- plan_dish by voice: a job the open page runs (docs/basket-plan.md M27) ----
+  /** The job's current state. 404 for another buyer's job. */
+  dishJob: (jobId: string) => call<DishJobResponse>("GET", `/v1/baskets/dish-jobs/${seg(jobId)}`),
+  /**
+   * Run the job inside this request (35-51 s): answers done or failed, or running at once when another request
+   * (another tab) already runs it.
+   */
+  runDishJob: (jobId: string) => call<DishJobResponse>("POST", `/v1/baskets/dish-jobs/${seg(jobId)}/run`),
 };
 
 /** A short message for a thrown error. */

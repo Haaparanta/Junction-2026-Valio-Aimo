@@ -75,3 +75,15 @@ describe("basket calls", () => {
     expect(sent[0]?.url).toBe("/v1/baskets/B-1%2F..%2Fx/lines/0");
   });
 });
+
+describe("dish job calls", () => {
+  it("GET and POST …/run on the job's path, with the id encoded", async () => {
+    const sent = fakeFetch(200, { job_id: "DJ-1", state: "done" });
+    await api.dishJob("DJ-1");
+    await api.runDishJob("DJ/1");
+    expect(sent).toEqual([
+      { url: "/v1/baskets/dish-jobs/DJ-1", method: "GET", body: undefined },
+      { url: "/v1/baskets/dish-jobs/DJ%2F1/run", method: "POST", body: undefined },
+    ]);
+  });
+});

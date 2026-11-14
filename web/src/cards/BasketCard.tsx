@@ -15,7 +15,8 @@ import { IMPORT_SUMMARY_ID, useIntake } from "../imports/useIntake";
 import { BASKET_TOOLS } from "../cow/mood";
 import { personaName } from "../persona";
 import { basketNote, changeKind, quoteNote } from "../voice/notes";
-import { focusBasket, intakeOf, receiveBasket, showQuote, showToast, ui, useUi } from "../voice/store";
+import { PLANNING_TEXT } from "../voice/dishJobs";
+import { dismissJob, focusBasket, intakeOf, jobsForBasket, receiveBasket, showQuote, showToast, ui, useUi } from "../voice/store";
 import { useAgentNote } from "../voice/useAgentNote";
 import { applyBasket, goToBasketLine, hasBasket, quoteBasketNow, restoreLine } from "./actions";
 import {
@@ -164,6 +165,7 @@ export function BasketCard({ asOf }: { asOf: string }) {
   const notify = useAgentNote(); // during a call, every change on screen is told to the agent
   const intake = useIntake();
   const imported = useUi(intakeOf);
+  const dishJobs = useUi((s) => s.dishJobs);
   const [panel, setPanel] = useState<Panel>(null);
   const panelId = useId();
 
@@ -263,6 +265,7 @@ export function BasketCard({ asOf }: { asOf: string }) {
   const showSaved = () => ui.set((s) => showQuote(s, b.quote_id, b.basket_id));
 
   const showLine = (lineId: number) => goToBasketLine(b.basket_id, lineId);
+  const jobs = jobsForBasket(dishJobs, b);
 
   return (
     <>
@@ -284,7 +287,14 @@ export function BasketCard({ asOf }: { asOf: string }) {
             <p className="hint">Click a product for its details, or change an amount or a date: the gateway prices the line again.</p>
           )
         )}
-        {b.dishes.length > 0 && (
+        {jobs.planning && <p className="dish-job intake-spin" role="status">{PLANNING_TEXT}</p>}
+      {jobs.notices.map((n) => (
+        <div key={n.jobId} className="dish-job failed" role="alert">
+          <p>{n.text}</p>
+          <button type="button" className="small" onClick={() => ui.set((s) => dismissJob(s, n.jobId))}>Dismiss</button>
+        </div>
+      ))}
+      {b.dishes.length > 0 && (
           <div className="dishes" aria-label="Planned dishes" role="group">
             {b.dishes.map((d, i) => (
               <DishHeader key={`${d.dish}-${d.need_date}-${i}`} dish={d} lines={b.lines} onShowLine={showLine} />

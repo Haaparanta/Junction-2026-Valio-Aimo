@@ -1,6 +1,7 @@
 /** A tiny external store: SDK callbacks write here, components subscribe with selectors (no per-frame renders). */
 import { useSyncExternalStore } from "react";
 import type { Basket, ImportResponse, Msg } from "../api";
+import { isFinal, type DishJob } from "./dishJobs";
 
 export type Persona = "aino" | "cow";
 export type Transport = "webrtc" | "relay" | "websocket" | "text";
@@ -37,6 +38,7 @@ export type Ui = {
   replaceLine: ReplaceLine | null;
   basketAlert: BasketAlert | null;
   intake: IntakeResult | null;
+  dishJobs: Record<string, DishJob>; // plan_dish jobs this page runs or watches, by job id
   quoteId: string | null;
   quoteBasketId: string | null; // the basket the quote on screen is for; null for a single-offer quote
   approvalId: string | null;
@@ -48,7 +50,7 @@ export type Ui = {
 export const initialUi: Ui = {
   phase: "idle", transport: null, conversationId: null, mode: "listening", userSpeaking: false, pendingTools: {},
   turns: [], toast: null, toastAction: null, lastError: null, lastOutcome: null, queue: null, persona: "aino",
-  offerSetId: null, basketId: null, basket: null, replaceLine: null, basketAlert: null, intake: null, quoteId: null,
+  offerSetId: null, basketId: null, basket: null, replaceLine: null, basketAlert: null, intake: null, dishJobs: {}, quoteId: null,
   quoteBasketId: null, approvalId: null, confirmQuoteId: null, order: null, queuedText: null,
 };
 
@@ -120,6 +122,49 @@ export function receiveImport(s: Ui, kind: IntakeResult["kind"], r: ImportRespon
 /** The import summary to show for the basket in focus, if any. */
 export const intakeOf = (s: Pick<Ui, "intake" | "basketId">): IntakeResult | null =>
   s.intake && s.intake.basketId === s.basketId ? s.intake : null;
+
+/** A dish job's new state; whether it was announced to the agent is kept. */
+export function putJob(s: Pick<Ui, "dishJobs">, j: DishJob): Partial<Ui> {
+  const announced = s.dishJobs[j.jobId]?.announced ?? false;
+  return { dishJobs: { ...s.dishJobs, [j.jobId]: { ...j, announced: j.announced || announced } } };
+}
+
+/** The job's final state has been told to the agent (or there was no call to tell). */
+export function markAnnounced(s: Pick<Ui, "dishJobs">, jobId: string): Partial<Ui> {
+  const j = s.dishJobs[jobId];
+  return j && !j.announced ? { dishJobs: { ...s.dishJobs, [jobId]: { ...j, announced: true } } } : {};
+}
+
+/** The buyer closed a failed job's message. */
+export function dismissJob(s: Pick<Ui, "dishJobs">, jobId: string): Partial<Ui> {
+  if (!s.dishJobs[jobId]) return {};
+  const { [jobId]: _gone, ...rest } = s.dishJobs;
+  return { dishJobs: rest };
+}
+
+/** A finished job's message for the basket card: a failure, or a plan with no dish (Claude refused or found nothing). */
+export type JobNotice = { jobId: string; text: string };
+
+/**
+ * What the basket card says about dish jobs: planning while the basket lists a job this page has not finished
+ * (dish_jobs) or one of its jobs is still running; and a notice for each job that failed or planned no dish.
+ */
+export function jobsForBasket(
+  jobs: Record<string, DishJob>, b: Pick<Basket, "basket_id" | "dish_jobs"> | null,
+): { planning: boolean; notices: JobNotice[] } {
+  if (!b) return { planning: false, notices: [] };
+  const listed = Array.isArray(b.dish_jobs) ? b.dish_jobs : [];
+  const mine = Object.values(jobs).filter((j) => j.basketId === b.basket_id);
+  const planning = listed.some((id) => !jobs[id] || !isFinal(jobs[id])) || mine.some((j) => !isFinal(j));
+  const notices = mine.flatMap((j): JobNotice[] => {
+    if (j.phase === "failed") return [{ jobId: j.jobId, text: j.message }];
+    if (j.phase === "done" && j.result && !j.result.dish) {
+      return [{ jobId: j.jobId, text: j.result.message_for_user.en || j.message || "No dish was planned." }];
+    }
+    return [];
+  });
+  return { planning, notices };
+}
 
 /** A gateway answer for the basket in focus; answers for any other basket are ignored. */
 export function receiveBasket(s: Ui, basket: Basket): Partial<Ui> {

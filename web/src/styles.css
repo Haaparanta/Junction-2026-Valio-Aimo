@@ -360,6 +360,13 @@ button.reason-btn { text-decoration-thickness: 1px; }
 .chip.conf.c-low { background: var(--pink); }
 .line-notes { margin: 0.3rem 0 0; padding-left: 1.1rem; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
 
+/* A plan_dish job the page runs: planning, or the gateway's reason it failed. */
+.dish-job { margin: 0.4rem 0 0.7rem; padding: 0.5rem 0.7rem; font-weight: 700; background: var(--cyan);
+            border: var(--bw) solid var(--ink); border-radius: var(--r); box-shadow: var(--shadow-sm); }
+.dish-job.failed { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem;
+                   background: #ffe1e1; }
+.dish-job.failed p { margin: 0; overflow-wrap: anywhere; }
+
 /* ---- Avatar rig. The driver writes --mouth-open, --blink, --breath and data-mouth. ---- */
 .avatar { margin: 0; text-align: center; background: var(--panel); border: var(--bw) solid var(--ink); border-radius: var(--r);
           box-shadow: var(--shadow); padding: 0.8rem 0.8rem 0.6rem; }
