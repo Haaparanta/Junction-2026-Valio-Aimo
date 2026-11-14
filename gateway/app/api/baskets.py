@@ -9,9 +9,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path
 
-from ..basket import Added, BasketsDep, Changed, LineDraft, respond
+from ..basket import Added, BasketsDep, Changed, LineDraft, respond, warnings_for
 from ..contract import (
     AddToBasketRequest,
+    BasketLine,
     BasketLinePatch,
     BasketLineRequest,
     BasketQuoteResponse,
@@ -20,7 +21,7 @@ from ..contract import (
     FromOfferRequest,
     UpdateBasketLineRequest,
 )
-from ..identity import CallerDep, WebBuyerDep
+from ..identity import Caller, CallerDep, WebBuyerDep
 from .common import AGENT, StateDep, not_found, tool
 
 router = APIRouter(prefix="/baskets")
@@ -33,6 +34,31 @@ BasketIdOrNewPath = Annotated[
 ]
 LineIdPath = Annotated[int, Path(ge=1, le=10_000, description="line_id exactly as a basket tool returned it.")]
 BASKET = ["basket_id", "basket", "line"]
+VOICE_ALTERNATIVES = 3  # a voice tool result keeps each line's best 3 alternatives; the screen shows them all
+
+
+def for_caller(res: BasketResponse, caller: Caller) -> BasketResponse:
+    """The answer as this caller gets it: complete for the web, and for voice each line's alternatives cut to the
+    best VOICE_ALTERNATIVES (in order), since every alternative carries a bilingual explanation and the agent
+    reads the whole result. A warning says how many more are on screen."""
+    if caller.channel != "voice":
+        return res
+    cut: dict[int, int] = {}
+
+    def compact(line: BasketLine) -> BasketLine:
+        extra = len(line.alternatives) - VOICE_ALTERNATIVES
+        if extra <= 0:
+            return line
+        cut[line.line_id] = extra
+        return line.model_copy(update={"alternatives": line.alternatives[:VOICE_ALTERNATIVES]})
+
+    basket = res.basket.model_copy(update={"lines": [compact(x) for x in res.basket.lines]})
+    line = compact(res.line) if res.line is not None else None
+    if not cut:
+        return res
+    more = sum(cut.values())
+    note = f"voice: {more} more alternative{'' if more == 1 else 's'} on screen"
+    return res.model_copy(update={"basket": basket, "line": line, "warnings": [*warnings_for(basket, line), note]})
 
 
 def added(a: Added) -> BasketResponse:
@@ -66,7 +92,8 @@ def changed(c: Changed) -> BasketResponse:
 )
 def add_to_basket(body: AddToBasketRequest, caller: CallerDep, baskets: BasketsDep) -> BasketResponse:
     draft = LineDraft.from_offers_request(body, "voice" if caller.channel == "voice" else "ui")
-    return added(baskets.add_lines(caller.buyer, body.basket_id, [draft], caller.conversation_id, dedupe=True))
+    res = added(baskets.add_lines(caller.buyer, body.basket_id, [draft], caller.conversation_id, dedupe=True))
+    return for_caller(res, caller)
 
 
 @router.get("/current", tags=["ui"])
@@ -90,7 +117,7 @@ def current_basket(buyer: WebBuyerDep, baskets: BasketsDep) -> BasketResponse:
     ),
 )
 def get_basket(basket_id: BasketIdPath, caller: CallerDep, baskets: BasketsDep) -> BasketResponse:
-    return respond(baskets.get(caller.buyer, basket_id))
+    return for_caller(respond(baskets.get(caller.buyer, basket_id)), caller)
 
 
 @router.post(
@@ -107,7 +134,7 @@ def get_basket(basket_id: BasketIdPath, caller: CallerDep, baskets: BasketsDep) 
 )
 def update_basket_line(body: UpdateBasketLineRequest, caller: CallerDep, baskets: BasketsDep) -> BasketResponse:
     patch = BasketLinePatch(amount=body.amount, unit=body.unit, need_date=body.need_date, offer_id=body.offer_id)
-    return changed(baskets.update_line(caller.buyer, body.basket_id, body.line_id, patch))
+    return for_caller(changed(baskets.update_line(caller.buyer, body.basket_id, body.line_id, patch)), caller)
 
 
 @router.post(
@@ -121,7 +148,7 @@ def update_basket_line(body: UpdateBasketLineRequest, caller: CallerDep, baskets
     ),
 )
 def remove_basket_line(body: BasketLineRequest, caller: CallerDep, baskets: BasketsDep) -> BasketResponse:
-    return changed(baskets.remove_line(caller.buyer, body.basket_id, body.line_id))
+    return for_caller(changed(baskets.remove_line(caller.buyer, body.basket_id, body.line_id)), caller)
 
 
 @router.post(

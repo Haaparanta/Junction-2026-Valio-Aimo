@@ -197,9 +197,9 @@ def test_voice_tool_and_ui_cookie_give_the_same_result(chef):
     assert by_voice["basket_id"] != by_cookie["basket_id"]
     lv, lc = by_voice["line"], by_cookie["line"]
     assert (lv["source"], lc["source"]) == ("voice", "ui")
+    assert lv["alternatives"] == lc["alternatives"][:3]  # voice keeps the best 3
     for key in [
         "offer",
-        "alternatives",
         "status",
         "flags",
         "vat_rate",
@@ -212,7 +212,30 @@ def test_voice_tool_and_ui_cookie_give_the_same_result(chef):
     chef.cookies.clear()
     read_by_voice = chef.get(f"/v1/baskets/{by_voice['basket_id']}", headers=h).json()
     login(chef)
-    assert chef.get(f"/v1/baskets/{by_voice['basket_id']}").json() == read_by_voice
+    read_by_cookie = chef.get(f"/v1/baskets/{by_voice['basket_id']}").json()
+    assert (
+        read_by_cookie["basket"]["lines"][0]["alternatives"][:3] == read_by_voice["basket"]["lines"][0]["alternatives"]
+    )
+    for key in ["basket_id", "status", "message_for_user"]:
+        assert read_by_cookie[key] == read_by_voice[key], key
+
+
+def test_voice_answers_keep_the_best_3_alternatives(chef):
+    """Every alternative carries a bilingual explanation, so a voice tool result keeps only the best 3 per line."""
+    h = voice(chef)
+    chef.cookies.clear()
+    by_voice = add(chef, "new", MILK, h)
+    bid = by_voice["basket_id"]
+    full = ["464401", "463335", "464201", "464073", "464398", "463779"]
+    assert [a["product_id"] for a in by_voice["line"]["alternatives"]] == full[:3]
+    assert [a["product_id"] for a in by_voice["basket"]["lines"][0]["alternatives"]] == full[:3]
+    assert "voice: 3 more alternatives on screen" in by_voice["warnings"]
+    read = chef.get(f"/v1/baskets/{bid}", headers=h).json()
+    assert [a["product_id"] for a in read["basket"]["lines"][0]["alternatives"]] == full[:3]
+    login(chef)
+    by_cookie = chef.get(f"/v1/baskets/{bid}").json()
+    assert [a["product_id"] for a in by_cookie["basket"]["lines"][0]["alternatives"]] == full
+    assert not any(w.startswith("voice:") for w in by_cookie["warnings"])
 
 
 def test_ui_routes_refuse_voice_headers_alone(chef):
