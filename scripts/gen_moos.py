@@ -26,18 +26,37 @@ TAKES = 2
 
 # Describe the action and the setting; counts such as "moo twice" are not followed (tech-research §6).
 CLIPS: dict[str, dict] = {
-    "greet": {"duration": 2.5, "prompt": "A single friendly dairy cow giving one long, warm, relaxed moo in a quiet "
-              "barn, recorded close up, no other animals, no music"},
-    "happy": {"duration": 1.4, "prompt": "A content dairy cow giving one short, cheerful moo, recorded close up in "
-              "a quiet farmyard, no background noise, no music"},
-    "question": {"duration": 2.0, "prompt": "A curious dairy cow giving one moo that rises in pitch at the end, as if "
-                 "asking a question, recorded close up in a quiet barn, no music"},
-    "alarmed": {"duration": 1.8, "prompt": "A startled dairy cow giving one loud, urgent, high-pitched moo, recorded "
-                "close up, no other sounds, no music"},
-    "celebrate": {"duration": 3.0, "prompt": "A delighted dairy cow giving one long, bright, triumphant moo, then a "
-                  "single cowbell ring, recorded close up, no music"},
-    "chewing": {"duration": 6.0, "loop": True, "prompt": "A cow slowly chewing cud, soft rhythmic chewing and "
-                "grinding sounds, recorded close up in a quiet barn, no mooing, no music"},
+    "greet": {
+        "duration": 2.5,
+        "prompt": "A single friendly dairy cow giving one long, warm, relaxed moo in a quiet "
+        "barn, recorded close up, no other animals, no music",
+    },
+    "happy": {
+        "duration": 1.4,
+        "prompt": "A content dairy cow giving one short, cheerful moo, recorded close up in "
+        "a quiet farmyard, no background noise, no music",
+    },
+    "question": {
+        "duration": 2.0,
+        "prompt": "A curious dairy cow giving one moo that rises in pitch at the end, as if "
+        "asking a question, recorded close up in a quiet barn, no music",
+    },
+    "alarmed": {
+        "duration": 1.8,
+        "prompt": "A startled dairy cow giving one loud, urgent, high-pitched moo, recorded "
+        "close up, no other sounds, no music",
+    },
+    "celebrate": {
+        "duration": 3.0,
+        "prompt": "A delighted dairy cow giving one long, bright, triumphant moo, then a "
+        "single cowbell ring, recorded close up, no music",
+    },
+    "chewing": {
+        "duration": 6.0,
+        "loop": True,
+        "prompt": "A cow slowly chewing cud, soft rhythmic chewing and "
+        "grinding sounds, recorded close up in a quiet barn, no mooing, no music",
+    },
 }
 
 
@@ -71,8 +90,12 @@ def main() -> int:
                 for attempt in range(5):
                     try:
                         audio = client.text_to_sound_effects.convert(
-                            text=spec["prompt"], model_id=MODEL, duration_seconds=spec["duration"],
-                            prompt_influence=0.6, loop=bool(spec.get("loop")), output_format="mp3_44100_128",
+                            text=spec["prompt"],
+                            model_id=MODEL,
+                            duration_seconds=spec["duration"],
+                            prompt_influence=0.6,
+                            loop=bool(spec.get("loop")),
+                            output_format="mp3_44100_128",
                         )
                         path.write_bytes(b"".join(audio))
                         break
@@ -83,18 +106,32 @@ def main() -> int:
                         raise
                 print(f"made   {name} ({path.stat().st_size // 1024} KB)")
             manifest[mood].append(f"/sfx/moo/{name}")
-            provenance.append({"file": name, "mood": mood, "prompt": spec["prompt"], "model_id": MODEL,
-                               "duration_seconds": spec["duration"], "loop": bool(spec.get("loop")),
-                               "prompt_influence": 0.6})
+            provenance.append(
+                {
+                    "file": name,
+                    "mood": mood,
+                    "prompt": spec["prompt"],
+                    "model_id": MODEL,
+                    "duration_seconds": spec["duration"],
+                    "loop": bool(spec.get("loop")),
+                    "prompt_influence": 0.6,
+                }
+            )
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    (OUT / "PROVENANCE.json").write_text(json.dumps({
-        "source": "ElevenLabs Sound Effects API (text to sound effects)",
-        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "plan": tier,
-        "licence": "Generated on a paid ElevenLabs plan, which includes a commercial licence; "
-                   "ElevenLabs watermarks generated audio.",
-        "clips": provenance,
-    }, indent=2) + "\n")
+    (OUT / "PROVENANCE.json").write_text(
+        json.dumps(
+            {
+                "source": "ElevenLabs Sound Effects API (text to sound effects)",
+                "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "plan": tier,
+                "licence": "Generated on a paid ElevenLabs plan, which includes a commercial licence; "
+                "ElevenLabs watermarks generated audio.",
+                "clips": provenance,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(f"wrote {sum(len(v) for v in manifest.values())} clips, manifest.json and PROVENANCE.json")
     return 0
 

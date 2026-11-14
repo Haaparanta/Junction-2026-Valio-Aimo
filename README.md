@@ -97,4 +97,4 @@ Record fixtures before Sun 15.11 17:00 Helsinki time. `data/fixtures/` stays git
 python3 scripts/record_fixtures.py
 ```
 
-Tests: `uv run pytest`, `pnpm test`, `pnpm typecheck`.
+Tests: `uv run pytest`, `pnpm test`, `pnpm typecheck`. CI runs on Google Cloud Build (`cloudbuild.yaml`), not GitHub Actions; see [docs/deploy.md](docs/deploy.md#ci-and-continuous-deploy-cloud-build).
