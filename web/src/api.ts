@@ -24,8 +24,20 @@ export type Quote = {
 };
 
 // ---- Basket, imports and dishes (docs/basket-plan.md). Mirrors gateway/app/contract.py. ----
-type Envelope = { status: string; reason_code: string | null; message_for_user: Msg; warnings: string[] };
+export type Envelope = { status: string; reason_code: string | null; message_for_user: Msg; warnings: string[] };
 export type Unit = "L" | "KG" | "PCS";
+export type ContentPerUnit = { value: string; unit: Unit; source: string; confidence: "high" | "medium" | "low" };
+export type ProductSummary = {
+  product_id: string; name_fi: string; name_en: string | null; brand: string | null; vendor: string | null;
+  category: string; sales_unit: string; content_per_unit: ContentPerUnit | null; claims: string[];
+  allergens_contains: string[]; allergen_data: "declared" | "unknown";
+  temperature_class: "chilled" | "frozen" | "ambient" | "unknown";
+};
+export type ProductResponse = Envelope & { product: ProductSummary };
+export type ConfirmResponse = Envelope & { quote_id: string; confirmed: boolean; confirmation_ref: string | null };
+export type OrderResponse = Envelope & {
+  order_id: string | null; approval_id: string | null; approval_url: string | null; total_net: string | null;
+};
 export type LineSource = "voice" | "ui" | "import" | "image" | "dish";
 export type LineStatus = "priced" | "needs_choice" | "needs_amount" | "unmatched" | "not_deliverable" | "cutoff_passed";
 export type Confidence = "high" | "medium" | "low";
@@ -75,9 +87,20 @@ export type Session = {
 };
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  /** `body` is the parsed JSON error body, when there was one (it may carry a reason_code). */
+  constructor(public status: number, message: string, public body: unknown = null) {
     super(message);
   }
+}
+
+/** The text to show for a failed call: the gateway's own message when it sent one. */
+export function errorDetail(j: unknown, fallback: string): string {
+  if (!j || typeof j !== "object") return fallback;
+  const o = j as { detail?: unknown; message_for_user?: { en?: unknown } };
+  if (typeof o.message_for_user?.en === "string") return o.message_for_user.en;
+  if (typeof o.detail === "string") return o.detail;
+  const first = Array.isArray(o.detail) ? (o.detail[0] as { msg?: unknown } | undefined) : undefined;
+  return typeof first?.msg === "string" ? first.msg : fallback; // FastAPI validation errors
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -87,27 +110,62 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!r.ok) {
-    let detail = r.statusText;
+    let j: unknown = null;
     try {
-      const j = (await r.json()) as { detail?: unknown };
-      if (typeof j.detail === "string") detail = j.detail;
+      j = await r.json();
     } catch { /* not JSON */ }
-    throw new HttpError(r.status, detail);
+    throw new HttpError(r.status, errorDetail(j, r.statusText || `HTTP ${r.status}`), j);
   }
   return (await r.json()) as T;
 }
+
+const seg = encodeURIComponent;
+/** Line ids are integers from the gateway; anything else becomes 0, which the gateway refuses. */
+const lineSeg = (lineId: number) => String(Number.isInteger(lineId) && lineId > 0 ? lineId : 0);
+const linePath = (basketId: string, lineId: number) => `/v1/baskets/${seg(basketId)}/lines/${lineSeg(lineId)}`;
 
 export const api = {
   me: () => call<Me>("GET", "/api/me"),
   login: (buyer_id: "chef" | "head_chef") => call<Me>("POST", "/api/login", { buyer_id }),
   logout: () => fetch("/api/logout", { method: "POST", credentials: "include" }),
   agentSession: (mode: "webrtc" | "websocket") => call<Session>("POST", "/api/agent-session", { mode }),
-  offerSet: (id: string) => call<OfferSet>("GET", `/v1/offers/${encodeURIComponent(id)}`),
-  quote: (id: string) => call<Quote>("GET", `/v1/quotes/${encodeURIComponent(id)}`),
-  confirm: (id: string) =>
-    call<{ confirmed: boolean; confirmation_ref: string | null }>("POST", `/v1/quotes/${encodeURIComponent(id)}/confirm`),
-  approval: (id: string) => call<Approval>("GET", `/v1/approvals/${encodeURIComponent(id)}`),
+  offerSet: (id: string) => call<OfferSet>("GET", `/v1/offers/${seg(id)}`),
+  product: (productId: string) => call<ProductResponse>("GET", `/v1/products/${seg(productId)}`),
+  quote: (id: string) => call<Quote>("GET", `/v1/quotes/${seg(id)}`),
+  /** The on-screen Confirm, under the buyer's own web session. reason_code quote_stale: the basket changed. */
+  confirm: (id: string) => call<ConfirmResponse>("POST", `/v1/quotes/${seg(id)}/confirm`),
+  /** Only when no call is running: during a call the agent places the order (two callers, two orders). */
+  placeOrder: (quoteId: string) => call<OrderResponse>("POST", "/v1/orders", { quote_id: quoteId }),
+  approval: (id: string) => call<Approval>("GET", `/v1/approvals/${seg(id)}`),
+
+  // ---- the basket (docs/basket-plan.md M22-M24) ----
+  basket: (basketId: string) => call<BasketResponse>("GET", `/v1/baskets/${seg(basketId)}`),
+  /** The signed-in buyer's newest open basket, or null when there is none (HTTP 404). */
+  currentBasket: async (): Promise<BasketResponse | null> => {
+    try {
+      return await call<BasketResponse>("GET", "/v1/baskets/current");
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) return null;
+      throw e;
+    }
+  },
+  /** Send all four fields: 0 and "" keep the current value. The gateway prices the line again. */
+  patchLine: (basketId: string, lineId: number, patch: BasketLinePatch) =>
+    call<BasketResponse>("PATCH", linePath(basketId, lineId), patch),
+  removeLine: (basketId: string, lineId: number) => call<BasketResponse>("DELETE", linePath(basketId, lineId)),
+  restoreLine: (basketId: string, lineId: number) =>
+    call<BasketResponse>("POST", `${linePath(basketId, lineId)}/restore`),
+  /** An option card's offer into the basket in focus (null starts a new one); replaceLineId 0 adds a line. */
+  addFromOffer: (basketId: string | null, offerId: string, replaceLineId = 0) =>
+    call<BasketResponse>("POST", `/v1/baskets/${seg(basketId ?? "new")}/lines/from-offer`, {
+      offer_id: offerId, replace_line_id: Number.isInteger(replaceLineId) && replaceLineId > 0 ? replaceLineId : 0,
+    }),
+  /** One quote for the whole basket. reason_code basket_incomplete: resolve open_lines first. */
+  quoteBasket: (basketId: string) => call<BasketQuoteResponse>("POST", "/v1/baskets/quote", { basket_id: basketId }),
 };
+
+/** A short message for a thrown error. */
+export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export const eur = (s: string) =>
   new Intl.NumberFormat("fi-FI", { style: "currency", currency: "EUR" }).format(Number(s));

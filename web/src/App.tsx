@@ -12,7 +12,7 @@ import { PERSONAS, applyPersonaChrome, personaName, personaNote } from "./person
 import { AgentRoot } from "./voice/AgentRoot";
 import { Captions, TextBox } from "./voice/Captions";
 import { ClientTools } from "./voice/ClientTools";
-import { ui, upsertTurn, useUi, type Persona } from "./voice/store";
+import { focusBasket, ui, upsertTurn, useUi, type Persona } from "./voice/store";
 import { useSession } from "./voice/useSession";
 
 function Login({ onDone }: { onDone: (me: Me) => void }) {
@@ -154,7 +154,26 @@ function Toast() {
   return toast ? <div className="toast" role="status">{toast}</div> : null;
 }
 
+/** After sign-in, or a reload, the buyer's newest open basket comes back into focus (B-03). */
+function useRestoreBasket(buyerId: string) {
+  useEffect(() => {
+    let alive = true;
+    api.currentBasket().then(
+      (r) => {
+        if (alive && r) ui.set((s) => (s.basketId ? {} : focusBasket(s, r.basket_id, r.basket)));
+      },
+      () => {
+        /* no basket to restore: the screen starts empty */
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [buyerId]);
+}
+
 function Workspace({ me }: { me: Me }) {
+  useRestoreBasket(me.buyer_id);
   const { start } = useSession();
   const persona = useUi((s) => s.persona);
   const live = useUi((s) => s.phase === "live");
