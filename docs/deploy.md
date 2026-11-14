@@ -76,7 +76,16 @@ gcloud builds submit --config cloudbuild.yaml --region europe-north1 --project f
   --substitutions _DEPLOY=true .
 ```
 
-### Triggers (one-time setup)
+### Triggers
+
+Set up on 14 Nov 2026 in `famous-hull-514004-t9` / `europe-north1`:
+- GitHub connection `valio-github`, using the Google Cloud Build app installation that covers this repo only;
+- repository `junction-valio-aimo`;
+- trigger `ci-pull-request`: checks on every pull request into `main`;
+- trigger `deploy-main`: checks, then a Cloud Run deploy, on every push to `main`.
+
+Both triggers run as the default compute service account. To recreate them, follow these steps:
+
 
 1. Connect GitHub (2nd-gen connection). The command prints a link: open it, authorise the Cloud Build GitHub App and install it on `Haaparanta/Junction-2026-Valio-Aimo` only.
 
