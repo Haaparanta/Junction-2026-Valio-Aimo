@@ -7,8 +7,9 @@ Operations tagged "agent-tools" become ElevenLabs webhook tools (agent/provision
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Header, HTTPException, Path
 
+from .. import orders
 from ..basket import STALE_CONFIRM, STALE_ORDER, BasketsDep
 from ..contract import (
     ApprovalResponse,
@@ -31,6 +32,7 @@ from ..contract import (
     SubstitutesResponse,
 )
 from ..identity import CallerDep, SettingsDep, WebBuyerDep
+from ..orders import IdempotencyConflict
 from ..stubs import get_product, plan_quantity, search, substitutes
 from . import baskets as basket_routes
 from . import intake as intake_routes
@@ -192,15 +194,45 @@ def confirm_quote(
     ),
 )
 def place_order(
-    body: PlaceOrderRequest, caller: CallerDep, stubs: StateDep, baskets: BasketsDep, settings: SettingsDep
+    body: PlaceOrderRequest,
+    caller: CallerDep,
+    stubs: StateDep,
+    baskets: BasketsDep,
+    settings: SettingsDep,
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            min_length=1,
+            max_length=100,
+            description="Optional client key (REST and MCP callers). The same key with another body answers 409.",
+        ),
+    ] = None,
 ) -> OrderResponse:
+    """Policy decides (M7): within the mandate the order completes; otherwise it waits for an approver, or is
+    denied. Price and availability are checked again first (M8.3)."""
     q = stubs.get_quote(caller.buyer, body.quote_id)
     if q is not None and baskets.is_stale(q):  # its basket changed after the quote (B-06)
         return OrderResponse(status="incomplete", reason_code="quote_stale", message_for_user=STALE_ORDER)
+    offers_by_line = None
+    if q is not None and q.basket_id:  # the offers the basket lines were priced with: flags, need, substitutes
+        offers_by_line = {line.line_id: line.offer for line in baskets.get(caller.buyer, q.basket_id).lines}
     # Idempotency from authenticated context: the LLM may call place_order twice (PLAN M8.2).
-    scope = caller.conversation_id if caller.channel == "voice" else f"web:{caller.buyer.buyer_id}"
-    res = stubs.place_order(caller.buyer, body.quote_id, f"{scope}|{body.quote_id}", settings.as_of)
-    if q is not None and q.basket_id and res.status in ("requires_escalation", "completed"):
+    scope = caller.conversation_id if caller.channel == "voice" else f"{caller.channel}:{caller.buyer.buyer_id}"
+    try:
+        res = orders.place_order(
+            stubs,
+            caller.buyer,
+            body.quote_id,
+            idempotency_key,
+            scope,
+            body.model_dump_json(),
+            settings.as_of,
+            offers_by_line,
+        )
+    except IdempotencyConflict as e:
+        raise HTTPException(409, "This idempotency key was already used for a different order.") from e
+    held = res.status == "completed" or (res.status == "requires_escalation" and res.approval_id)
+    if q is not None and q.basket_id and held:
         baskets.mark_ordered(caller.buyer, q.basket_id)  # read-only from now on (B-03)
     return res
 
@@ -214,8 +246,9 @@ def place_order(
         filters=["order_id", "approval_id", "total_net"],
     ),
 )
-def get_order(order_id: OrderIdPath, caller: CallerDep, stubs: StateDep) -> OrderResponse:
-    res = stubs.get_order(caller.buyer, order_id)
+def get_order(order_id: OrderIdPath, caller: CallerDep, stubs: StateDep, settings: SettingsDep = None) -> OrderResponse:
+    """The order's buyer, or an approver of the same org. An approval past its decide-by time expires here."""
+    res = orders.get_order(stubs, caller.buyer, order_id, settings.as_of if settings else None)
     if res is None:
         raise not_found("order")
     return res
@@ -227,8 +260,10 @@ def get_order(order_id: OrderIdPath, caller: CallerDep, stubs: StateDep) -> Orde
     tags=AGENT,
     openapi_extra=tool("Cancel an order that is not completed yet, only when the buyer asks to.", filters=["order_id"]),
 )
-def cancel_order(order_id: OrderIdPath, body: CancelOrderRequest, caller: CallerDep, stubs: StateDep) -> OrderResponse:
-    res = stubs.cancel_order(caller.buyer, order_id)
+def cancel_order(
+    order_id: OrderIdPath, body: CancelOrderRequest, caller: CallerDep, stubs: StateDep, settings: SettingsDep
+) -> OrderResponse:
+    res = orders.cancel_order(stubs, caller.buyer, order_id, settings.as_of)
     if res is None:
         raise not_found("order")
     return res
@@ -247,8 +282,10 @@ def get_approval(
     approval_id: Annotated[str, Path(min_length=3, max_length=80, description="approval_id as returned by a tool.")],
     caller: CallerDep,
     stubs: StateDep,
+    settings: SettingsDep = None,
 ) -> ApprovalResponse:
-    res = stubs.get_approval(caller.buyer, approval_id)
+    """The order's buyer, or an approver of the same org. Deciding is only on the console (POST .../decision)."""
+    res = orders.get_approval(stubs, caller.buyer, approval_id, settings.as_of if settings else None)
     if res is None:
         raise not_found("approval")
     return res

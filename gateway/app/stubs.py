@@ -17,11 +17,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from .contract import (
     Approval,
-    ApprovalResponse,
     Basket,
     ConfirmResponse,
     ContentPerUnit,
@@ -33,7 +32,6 @@ from .contract import (
     OffersRequest,
     OffersResponse,
     Order,
-    OrderResponse,
     PlanQuantityRequest,
     PlanQuantityResponse,
     ProductResponse,
@@ -673,13 +671,17 @@ def substitutes(req: SubstitutesRequest) -> SubstitutesResponse:
 
 
 class StubState:
-    """Offers, quotes and orders, in memory. Idempotent by (buyer, offer) and (conversation or buyer, quote)."""
+    """Offers, quotes, orders and approvals, in memory. Quotes are idempotent by (buyer, offer); the order and
+    approval logic (PLAN M8, M9) is in orders.py, which keeps its records here."""
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.quotes: dict[str, Quote] = {}
         self.orders: dict[str, Order] = {}
         self.approvals: dict[str, Approval] = {}
+        self.order_meta: dict[str, Any] = {}  # order_id -> orders.OrderMeta (owner, the quote as ordered, ...)
+        self.idempotency: dict[str, tuple[str, str]] = {}  # key -> (payload fingerprint, order_id)
+        self.seq = 0  # orders and approvals in the order they were made (newest first in the approver's list)
         self.offers: dict[str, Offer] = {}
         self.offer_sets: dict[str, OffersResponse] = {}
         self.offer_requests: dict[str, OffersRequest] = {}  # what each offer set was asked for ("Add to basket")
@@ -844,6 +846,17 @@ class StubState:
             q = self.get_quote(buyer, quote_id)
             if q is None:
                 return None
+            if not q.confirmed and instant(q.expires_at) <= instant(now):  # an expired price cannot be confirmed
+                return ConfirmResponse(
+                    status="incomplete",
+                    reason_code="quote_expired",
+                    quote_id=quote_id,
+                    confirmed=False,
+                    message_for_user=Msg(
+                        fi="Tarjouksen hinta ei ole enää voimassa. Tehdään uusi tarjous.",
+                        en="The quote's fixed price has expired. Let's make a new quote.",
+                    ),
+                )
             if not q.confirmed:
                 q = q.model_copy(update={"confirmed": True, "confirmed_at": now})
                 self.quotes[quote_id] = q
@@ -852,116 +865,4 @@ class StubState:
             confirmed=True,
             confirmation_ref="C-" + quote_id[2:],
             message_for_user=Msg(fi="Vahvistettu.", en="Confirmed."),
-        )
-
-    def place_order(self, buyer: Buyer, quote_id: str, idem: str, as_of: str) -> OrderResponse:
-        with self.lock:
-            q = self.get_quote(buyer, quote_id)
-            if q is None:
-                return OrderResponse(
-                    status="incomplete",
-                    reason_code="not_found",
-                    message_for_user=Msg(
-                        fi="Tarjousta ei löytynyt. Pyydä uusi tarjous.",
-                        en="I could not find that quote. Let's make a new one.",
-                    ),
-                )
-            if not q.confirmed:
-                return OrderResponse(
-                    status="incomplete",
-                    reason_code="confirmation_required",
-                    message_for_user=Msg(
-                        fi="Tilaus pitää ensin vahvistaa näytöltä.",
-                        en="The buyer must confirm the quote on screen first.",
-                    ),
-                )
-            order_id = "O-" + sha(idem)[:10].upper()
-            o = self.orders.get(order_id)
-            if o is None and Decimal(q.total_net) <= Decimal(buyer.order_cap_eur):
-                o = Order(  # within the buyer's order cap: no approval needed
-                    order_id=order_id,
-                    quote_id=quote_id,
-                    status="completed",
-                    total_net=q.total_net,
-                    total_gross=q.total_gross,
-                    delivery_date=q.delivery_date,
-                    created_at=as_of,
-                )
-                self.orders[order_id] = o
-            if o is None:
-                approval_id = "A-" + order_id[2:]
-                decide_by = "2026-11-15T16:00:00+02:00"
-                o = Order(
-                    order_id=order_id,
-                    quote_id=quote_id,
-                    status="requires_escalation",
-                    total_net=q.total_net,
-                    total_gross=q.total_gross,
-                    delivery_date=q.delivery_date,
-                    approval_id=approval_id,
-                    approval_url=f"/approvals/{approval_id}",
-                    created_at=as_of,
-                )
-                self.orders[order_id] = o
-                self.approvals[approval_id] = Approval(
-                    approval_id=approval_id,
-                    status="requires_escalation",
-                    order_id=order_id,
-                    quote_id=quote_id,
-                    reasons=[f"OVER_ORDER_CAP: EUR {q.total_net} is above the EUR {buyer.order_cap_eur} order cap"],
-                    decide_by=decide_by,
-                    approver_role="head_chef",
-                )
-        return self.order_response(o, buyer)
-
-    def order_response(self, o: Order, buyer: Buyer) -> OrderResponse:
-        if o.status == "requires_escalation":
-            msg = Msg(
-                fi=f"Tilaus {o.total_net} € ylittää {buyer.order_cap_eur} euron tilausrajasi, joten se lähti "
-                "esihenkilösi hyväksyttäväksi. Hyväksyntä tarvitaan su 15.11. klo 16.00 mennessä.",
-                en=f"The order of EUR {o.total_net} is above your EUR {buyer.order_cap_eur} order cap, so it went to "
-                "your manager for approval. It needs approval by Sun 15.11 16:00.",
-            )
-            reason = "limit_exceeded"
-        elif o.status == "canceled":
-            msg, reason = Msg(fi="Tilaus on peruttu.", en="The order is canceled."), None
-        else:
-            msg, reason = Msg(fi=f"Tilaus {o.order_id} on vahvistettu.", en=f"Order {o.order_id} is confirmed."), None
-        return OrderResponse(
-            status=o.status,
-            reason_code=reason,
-            order_id=o.order_id,
-            order=o,
-            approval_id=o.approval_id,
-            approval_url=o.approval_url,
-            total_net=o.total_net,
-            message_for_user=msg,
-            warnings=["stub: policy and approval are canned until M7-M9"],
-        )
-
-    def get_order(self, buyer: Buyer, order_id: str) -> OrderResponse | None:
-        o = self.orders.get(order_id)
-        if o is None or self.get_quote(buyer, o.quote_id) is None:
-            return None
-        return self.order_response(o, buyer)
-
-    def cancel_order(self, buyer: Buyer, order_id: str) -> OrderResponse | None:
-        with self.lock:
-            o = self.orders.get(order_id)
-            if o is None or self.get_quote(buyer, o.quote_id) is None:
-                return None
-            if o.status != "completed":
-                o = o.model_copy(update={"status": "canceled"})
-                self.orders[order_id] = o
-        return self.order_response(o, buyer)
-
-    def get_approval(self, buyer: Buyer, approval_id: str) -> ApprovalResponse | None:
-        a = self.approvals.get(approval_id)
-        if a is None or self.get_quote(buyer, a.quote_id) is None:
-            return None
-        return ApprovalResponse(
-            status=a.status,
-            approval_id=a.approval_id,
-            approval=a,
-            message_for_user=Msg(fi="Odottaa esihenkilön hyväksyntää.", en="Waiting for the manager's approval."),
         )
