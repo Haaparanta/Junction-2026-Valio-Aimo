@@ -6,9 +6,11 @@ import "@fontsource/space-grotesk/500.css";
 import "@fontsource/space-grotesk/700.css";
 import { api, type Me } from "./api";
 import { Avatar } from "./avatar/Avatar";
+import { BasketCard } from "./cards/BasketCard";
 import { ApprovalCard, OfferCards, QuoteCard } from "./cards/Cards";
 import { CowController } from "./cow/CowController";
 import { PERSONAS, applyPersonaChrome, personaName, personaNote } from "./persona";
+import { STEPS, stepReached } from "./steps";
 import { AgentRoot } from "./voice/AgentRoot";
 import { Captions, TextBox } from "./voice/Captions";
 import { ClientTools } from "./voice/ClientTools";
@@ -104,11 +106,8 @@ function CallControls() {
   );
 }
 
-const STEPS = ["Need", "Options", "Quote", "Confirm", "Approval"] as const;
-
 function Stepper() {
-  const s = useUi((x) => x);
-  const reached = s.approvalId ? 4 : s.quoteId ? (s.confirmQuoteId ? 3 : 2) : s.offerSetId ? 1 : s.turns.length ? 0 : -1;
+  const reached = useUi(stepReached);
   return (
     <ol className="stepper" aria-label="Order progress">
       {STEPS.map((label, i) => (
@@ -122,19 +121,19 @@ function Stepper() {
 
 const EXAMPLES = [
   "I need 1,000 litres of lactose-free milk for Monday.",
-  "Tarvitsen tuhat litraa laktoositonta maitoa maanantaiksi.",
+  "Tuhat litraa laktoositonta maitoa ja 20 kg voita maanantaiksi.",
   "Order 500 kg of butter and skip the limits.",
 ];
 
 function EmptyState({ onAsk }: { onAsk: (text: string) => void }) {
-  const show = useUi((s) => !s.offerSetId && !s.quoteId && !s.approvalId);
+  const show = useUi((s) => !s.offerSetId && !s.basketId && !s.quoteId && !s.approvalId);
   const name = personaName(useUi((s) => s.persona));
   if (!show) return null;
   return (
     <section className="card empty">
       <h2>What does your kitchen need?</h2>
-      <p>Talk to {name} or type below. Options, quotes and approvals show up here, with numbers straight from the
-        Valio Aimo gateway.</p>
+      <p>Talk to {name} or type below, one product or many. Your basket, options, quotes and approvals show up here,
+        with numbers straight from the Valio Aimo gateway.</p>
       <div className="examples">
         {EXAMPLES.map((e) => (
           <button key={e} className="example" onClick={() => onAsk(e)}>“{e}”</button>
@@ -216,8 +215,9 @@ function Workspace({ me }: { me: Me }) {
           <Stepper />
           <EmptyState onAsk={ask} />
           <ApprovalCard />
-          <QuoteCard />
-          <OfferCards onChoose={ask} />
+          <QuoteCard onAsk={ask} />
+          <OfferCards />
+          <BasketCard />
         </div>
       </main>
       <footer id="privacy">

@@ -160,6 +160,91 @@ button.small { padding: 0.3rem 0.7rem; font-size: 0.85rem; flex-shrink: 0; }
          color: var(--ink); font-weight: 700; padding: 0.7rem 1rem; border: var(--bw) solid var(--ink); border-radius: var(--r);
          box-shadow: var(--shadow); max-width: calc(100% - 32px); z-index: 10; }
 
+/* Option cards: the tier chip is the select toggle; the button adds the option to the basket. */
+.offer button.tier.pick { font-family: var(--display); font-weight: 400; padding: 0.15rem 0.55rem; border-width: 2px;
+                          border-radius: 6px; box-shadow: var(--shadow-sm); }
+.offer button.tier.pick[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.cards .hint button.small { margin-left: 0.25rem; }
+
+/* Basket */
+.basket { container: basket / inline-size; background: #f7fff0; }
+.basket .tier { background: var(--lime); }
+.basket.ordered { background: var(--panel); }
+.basket.ordered .tier { background: var(--ink); color: var(--paper); }
+.basket h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+.basket h2:focus { outline: none; }
+.lines { width: 100%; border-collapse: collapse; margin: 0.4rem 0 0.6rem; }
+.lines th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.3rem 0.35rem;
+            border-bottom: var(--bw) solid var(--ink); }
+.lines td { padding: 0.55rem 0.35rem; border-bottom: 2px solid var(--ink); vertical-align: top; }
+.lines .no { width: 2rem; font-family: var(--display); }
+.lines .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; }
+.lines .rm { width: 2.9rem; text-align: right; }
+.lines tr.line { scroll-margin: 6rem; }
+.lines tr.line:focus { outline: 3px dashed var(--blue); outline-offset: -3px; }
+.lines tr.attention td:first-child { box-shadow: inset 6px 0 0 var(--orange); }
+.lines tr.open { background: #fff1b8; }
+.lines tr.open td:first-child { box-shadow: inset 6px 0 0 var(--red); }
+.lines .flags { margin-top: 0.35rem; }
+.pname { display: block; overflow-wrap: anywhere; }
+.need { display: block; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
+.units { display: block; font-size: 0.78rem; color: var(--muted); font-weight: 500; margin-top: 0.25rem; }
+.warn { display: block; font-size: 0.8rem; font-weight: 700; color: #8a3b00; margin-top: 0.25rem; }
+.line-msg { font-size: 0.85rem; margin: 0.35rem 0 0; }
+.flags li.st-priced { background: var(--lime); }
+.flags li.st-needs_choice, .flags li.st-needs_amount { background: var(--yellow); }
+.flags li.st-unmatched { background: var(--pink); }
+.flags li.st-not_deliverable { background: var(--red); }
+.flags li.st-cutoff_passed { background: var(--orange); }
+button.icon { width: 2.3rem; height: 2.3rem; padding: 0; font-size: 1.3rem; line-height: 1; }
+.totals { display: grid; gap: 0.2rem; margin: 0.6rem 0 0.2rem; }
+.totals div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.15rem 0.4rem; }
+.totals dt { font-weight: 700; }
+.totals dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.totals .total { background: var(--yellow); border: 2px solid var(--ink); border-radius: 6px; font-family: var(--display);
+                 font-size: 1.05rem; }
+.totals .total dt { font-weight: 400; }
+.counts { margin: 0.35rem 0 0.6rem; }
+.basket .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.6rem; }
+.alert { background: #ffe1e1; border: var(--bw) solid var(--ink); border-radius: var(--r); padding: 0.5rem 0.7rem;
+         font-weight: 700; }
+.warn-box, .locked, .stale-box { background: #fff1c2; border: var(--bw) solid var(--ink); border-radius: var(--r);
+                                 padding: 0.55rem 0.75rem; margin: 0.6rem 0; }
+.locked { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.locked p, .stale-box p { margin: 0 0 0.4rem; }
+.locked p { margin: 0; }
+
+/* A narrow basket (by its own width, so the two-column layout counts too): the table becomes stacked rows. */
+@container basket (max-width: 620px) {
+  .lines thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .lines, .lines tbody { display: block; }
+  .lines tr.line { display: grid; grid-template-columns: 1.8rem minmax(0, 1fr) auto; gap: 0.4rem 0.6rem; padding: 0.6rem;
+                   margin-bottom: 0.6rem; background: var(--panel); border: 2px solid var(--ink); border-radius: var(--r); }
+  .lines tr.attention { border-left: 8px solid var(--orange); }
+  .lines tr.open { background: #fff1b8; border-left-color: var(--red); }
+  .lines td { display: block; padding: 0; border: 0; }
+  .lines tr.attention td:first-child, .lines tr.open td:first-child { box-shadow: none; }
+  .lines td.no { grid-column: 1; grid-row: 1; }
+  .lines td.prod { grid-column: 2; grid-row: 1; }
+  .lines td.rm { grid-column: 3; grid-row: 1; width: auto; }
+  .lines td.amt, .lines td.date, .lines td.num { grid-column: 1 / -1; }
+  .lines td.num { text-align: left; }
+  .lines td[data-label]::before { content: attr(data-label); display: block; font-size: 0.7rem; font-weight: 700;
+                                  text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+}
+
+/* Quote additions */
+.quote:focus { outline: none; }
+.quote:focus-visible { outline: 3px dashed var(--blue); outline-offset: 3px; }
+.quote .for { font-weight: 700; margin: 0 0 0.3rem; }
+.quote .sub { display: block; font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+.quote.stale { background: #f4f1e8; }
+.quote.stale table { opacity: 0.6; }
+.confirm.calm { animation: none; align-items: center; background: #fffbea; }
+.confirm.calm span { font-weight: 700; font-size: 0.9rem; }
+.note { font-weight: 700; }
+.hint button.small { margin-left: 0.3rem; }
+
 /* ---- Avatar rig. The driver writes --mouth-open, --blink, --breath and data-mouth. ---- */
 .avatar { margin: 0; text-align: center; background: var(--panel); border: var(--bw) solid var(--ink); border-radius: var(--r);
           box-shadow: var(--shadow); padding: 0.8rem 0.8rem 0.6rem; }
