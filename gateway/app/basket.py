@@ -13,7 +13,7 @@ import json
 import secrets
 import sqlite3
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .contract import (
     Basket,
+    BasketDish,
     BasketLine,
     BasketLinePatch,
     BasketQuoteResponse,
@@ -122,6 +123,11 @@ STALE_ORDER = Msg(
 
 
 def msg_choice(n: int) -> Msg:
+    if n == 1:  # a single close name: never priced until the buyer says it is the one
+        return Msg(
+            fi="Tarkista ehdotettu tuote ja valitse se, jos se on oikea.",
+            en="Check the suggested product and choose it if it is the right one.",
+        )
     return Msg(fi=f"Valitse yksi {n} vaihtoehdosta.", en=f"Choose one of {n} matches.")
 
 
@@ -244,7 +250,9 @@ def need_key(d: LineDraft) -> str:
         return sorted({f(x.strip()) for x in xs if x.strip()})
 
     n = d.need
+    bare = n is None and d.product_id is None and not d.candidates  # unmatched: only its words tell rows apart
     key = {
+        "text": " ".join(d.need_text.casefold().split()) if bare else None,
         "need": None
         if n is None
         else {
@@ -345,7 +353,7 @@ class BasketService:
 
     def price(self, d: LineDraft, chosen: str | None = None) -> Snapshot:
         """Price one line from its draft. `chosen` keeps the previous pick of a search need while it is an option."""
-        pinned = d.product_id or (d.candidates[0] if len(d.candidates) == 1 else None)
+        pinned = d.product_id  # candidates, even a single one, wait for the buyer's choice
         p = PRODUCTS.get(pinned) if pinned else None
         if d.amount is None or d.unit is None:
             return Snapshot(
@@ -385,7 +393,7 @@ class BasketService:
         if options:
             offer = next((o for o in options if o.product_id == chosen), options[0])
             return self._priced(d, offer, [o for o in options if o is not offer])
-        if d.need is None and len(d.candidates) < 2:
+        if d.need is None and not d.candidates:
             return Snapshot(status="unmatched", message=UNMATCHED)  # nothing to price
         flags = sorted({f for n in refused for f in n.flags if f in BLOCKING}, key=FLAG_ORDER.index)
         if "CUTOFF_PASSED" in flags:
@@ -404,7 +412,7 @@ class BasketService:
             res = self.stubs.get_offers(req, self.settings.as_of)
             units = [] if res.counts["candidates"] else self._units(req)
             return res.options, res.not_offered, units
-        if len(d.candidates) < 2:
+        if not d.candidates:
             return [], [], []
         priced: list[Offer] = []
         refused: list[NotOffered] = []
@@ -488,10 +496,12 @@ class BasketService:
         conversation_id: str | None = None,
         *,
         dedupe: bool = False,
+        record: Callable[[sqlite3.Connection, str, list[int]], None] | None = None,
     ) -> Added:
         """Price and add lines. 'new' starts a basket, except that a voice call reuses the open basket it started,
         so a retried tool call never makes a second one. With dedupe, a need identical to an active line's need
-        returns that line instead of a duplicate."""
+        returns that line instead of a duplicate. `record(connection, basket_id, line_ids)` runs in the same
+        transaction after the lines are in, e.g. to store the dish they came from."""
         now = _now()
         basket_id_or_new = basket_id_or_new.strip()  # an agent may pad the id
         with self._tx() as c:
@@ -535,6 +545,8 @@ class BasketService:
                 )
             if fresh:
                 self._bump(c, basket_id, now, next_line_id=next_id)
+            if record is not None:
+                record(c, basket_id, out)
             basket = self._load(c, buyer, basket_id)
         by_id = {line.line_id: line for line in basket.lines}
         return Added(basket, [by_id[i] for i in out], existing)
@@ -772,6 +784,11 @@ class BasketService:
             counts[line.status] += 1
         priced = [line for line in lines if line.status == "priced" and line.offer is not None]
         quote = self.stubs.quotes.get(b["quote_id"]) if b["quote_id"] else None
+        dishes = c.execute("SELECT dish FROM basket_dish WHERE basket_id = ? ORDER BY seq", (basket_id,)).fetchall()
+        jobs = c.execute(  # plan_dish jobs the open page still has to run (app/dishes.py)
+            "SELECT job_id FROM dish_job WHERE basket_id = ? AND state IN ('pending', 'running') ORDER BY created_at",
+            (basket_id,),
+        ).fetchall()
         return Basket(
             basket_id=b["basket_id"],
             buyer_id=b["buyer_id"],
@@ -784,6 +801,8 @@ class BasketService:
             total_gross=money(sum((Decimal(x.line_gross or 0) for x in priced), Decimal(0))),
             quote_id=b["quote_id"],
             quote_stale=bool(b["quote_id"]) and (quote is None or quote.basket_version != b["version"]),
+            dishes=[BasketDish.model_validate_json(r["dish"]) for r in dishes],
+            dish_jobs=[r["job_id"] for r in jobs],
             created_at=b["created_at"],
             updated_at=b["updated_at"],
         )

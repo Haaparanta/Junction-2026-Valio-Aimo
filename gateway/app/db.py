@@ -47,6 +47,25 @@ CREATE TABLE IF NOT EXISTS basket_line (
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   PRIMARY KEY (basket_id, line_id)
 );
+CREATE TABLE IF NOT EXISTS basket_dish ( -- a dish plan_dish broke down into lines (M27); the SQL lives in dishes.py
+  basket_id TEXT NOT NULL, seq INTEGER NOT NULL,
+  dish TEXT NOT NULL,                   -- JSON: contract.BasketDish
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (basket_id, seq)
+);
+CREATE TABLE IF NOT EXISTS dish_job (   -- the voice path of plan_dish: the open web page runs the job (M27.4)
+  job_id TEXT PRIMARY KEY, buyer_id TEXT NOT NULL, basket_id TEXT NOT NULL,
+  scope TEXT NOT NULL,                  -- the conversation, or web:<buyer>: an identical request there reuses the job
+  request_key TEXT NOT NULL,            -- the normalised request
+  request TEXT NOT NULL,                -- JSON: contract.PlanDishRequest with the resolved basket_id
+  state TEXT NOT NULL,                  -- pending | running | done | failed
+  claim TEXT NOT NULL DEFAULT '',       -- the run that holds a running job
+  result TEXT,                          -- JSON: contract.DishResponse when done
+  message TEXT,                         -- JSON: contract.Msg when failed
+  created_at REAL NOT NULL, updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS dish_job_by_request ON dish_job (buyer_id, scope, request_key);
+CREATE INDEX IF NOT EXISTS dish_job_by_basket ON dish_job (basket_id, state);
 """
 
 

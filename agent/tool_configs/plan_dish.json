@@ -1,0 +1,119 @@
+{
+  "type": "webhook",
+  "name": "plan_dish",
+  "description": "Plan a finished dish the buyer names, for the number of portions, and add every ingredient to the basket as a priced line. It answers at once with a job_id and the basket_id; the plan itself takes about half a minute on the buyer's screen. Put the buyer's diet in must_claims and must_not_allergens. Use basket_id 'new' only when there is no basket yet. Right away call show_basket with the basket_id and tell the buyer it takes about half a minute. Wait for the context update that the dish is ready, then call get_basket and explain the new lines, the assumptions and the warnings. Never state a number that is not in a tool result.",
+  "response_timeout_secs": 15,
+  "tool_error_handling_mode": "passthrough",
+  "pre_tool_speech": "force",
+  "interruption_mode": "allow",
+  "api_schema": {
+    "url": "https://{{system__env_gateway_host}}/v1/baskets/dish-jobs",
+    "method": "POST",
+    "request_headers": {
+      "X-Gateway-Key": {
+        "secret_id": "<gateway_platform_key secret id>"
+      },
+      "X-Conversation-Id": {
+        "variable_name": "system__conversation_id"
+      },
+      "X-Session-Token": {
+        "variable_name": "secret__session_token"
+      }
+    },
+    "response_filter": {
+      "mode": "allow",
+      "filters": [
+        "status",
+        "reason_code",
+        "message_for_user",
+        "warnings",
+        "job_id",
+        "basket_id",
+        "state"
+      ]
+    },
+    "content_type": "application/json",
+    "request_body_schema": {
+      "type": "object",
+      "description": "Arguments for plan_dish.",
+      "properties": {
+        "dish": {
+          "type": "string",
+          "description": "The finished dish in the buyer's words, Finnish or English, e.g. 'mansikkakakku'."
+        },
+        "servings": {
+          "type": "integer",
+          "description": "Number of portions."
+        },
+        "need_date": {
+          "type": "string",
+          "description": "Delivery date the buyer needs, YYYY-MM-DD (Europe/Helsinki)."
+        },
+        "must_claims": {
+          "type": "array",
+          "description": "GS1 claims the ingredients must carry where they make sense, e.g. ['FREE_FROM_LACTOSE'].",
+          "items": {
+            "type": "string",
+            "description": "One item of: GS1 claims the ingredients must carry where they make sense, e.g. ['FREE_FROM_LACTOSE'].",
+            "enum": [
+              "FREE_FROM_LACTOSE",
+              "FREE_FROM_GLUTEN",
+              "VEGAN",
+              "VEGETARIAN",
+              "FREE_FROM_EGGS",
+              "FREE_FROM_SOY",
+              "FREE_FROM_WHEAT",
+              "LOW_LACTOSE"
+            ]
+          }
+        },
+        "must_not_allergens": {
+          "type": "array",
+          "description": "GS1 allergen codes no ingredient may contain, e.g. ['AM'] only for milk-free or a milk allergy.",
+          "items": {
+            "type": "string",
+            "description": "One item of: GS1 allergen codes no ingredient may contain, e.g. ['AM'] only for milk-free or a milk allergy.",
+            "enum": [
+              "AM",
+              "AE",
+              "AW",
+              "UW",
+              "GB",
+              "NR",
+              "GO",
+              "AY",
+              "AN",
+              "AP",
+              "AS",
+              "AF",
+              "AC",
+              "UM",
+              "BC",
+              "BM",
+              "AU",
+              "NL"
+            ]
+          }
+        },
+        "language": {
+          "type": "string",
+          "description": "The language the buyer speaks. Default: \"fi\".",
+          "enum": [
+            "fi",
+            "en"
+          ]
+        },
+        "basket_id": {
+          "type": "string",
+          "description": "basket_id exactly as a basket tool returned it, or 'new' to start a new basket."
+        }
+      },
+      "required": [
+        "dish",
+        "servings",
+        "need_date",
+        "basket_id"
+      ]
+    }
+  }
+}

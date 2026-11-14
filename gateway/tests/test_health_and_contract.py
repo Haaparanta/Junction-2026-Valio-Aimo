@@ -16,6 +16,7 @@ AGENT_TOOLS = {
     "update_basket_line",
     "remove_basket_line",
     "quote_basket",
+    "plan_dish",
 }
 
 
@@ -56,6 +57,7 @@ def test_agent_request_schemas_are_flat_and_described(settings):
         "BasketRequest",
         "BasketLinePatch",
         "FromOfferRequest",
+        "PlanDishRequest",
     ]:
         for prop, s in schemas[name]["properties"].items():
             assert "anyOf" not in s, (name, prop)

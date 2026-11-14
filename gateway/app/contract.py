@@ -476,6 +476,7 @@ class Basket(BaseModel):
     quote_id: str  # the latest quote for this basket, "" when there is none
     quote_stale: bool  # the basket changed after that quote, or the quote is gone
     dishes: list[BasketDish] = Field(default_factory=list)
+    dish_jobs: list[str] = Field(default_factory=list)  # pending or running plan_dish jobs: the page runs them
     created_at: str
     updated_at: str
 
@@ -633,4 +634,18 @@ class DishBreakdown(BaseModel):
 class DishResponse(Envelope):
     basket_id: str
     basket: Basket
-    dish: BasketDish
+    dish: BasketDish | None = None  # None when Claude refused or found no ingredients (reason_code not_found)
+
+
+# ---- the voice path of plan_dish: a job the open web page runs (Claude takes 35-51 s; voice tools ~20-30 s) ----
+
+DishJobState = Literal["pending", "running", "done", "failed"]
+
+
+class DishJobResponse(Envelope):
+    """plan_dish (agent tool) answers this at once; the page runs the job and polls it by job_id."""
+
+    job_id: str
+    basket_id: str
+    state: DishJobState
+    result: DishResponse | None = None  # when done

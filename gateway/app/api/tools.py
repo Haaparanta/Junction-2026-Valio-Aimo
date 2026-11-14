@@ -33,6 +33,7 @@ from ..contract import (
 from ..identity import CallerDep, SettingsDep, WebBuyerDep
 from ..stubs import get_product, plan_quantity, search, substitutes
 from . import baskets as basket_routes
+from . import intake as intake_routes
 from .common import AGENT, StateDep, not_found, tool
 
 router = APIRouter(prefix="/v1")
@@ -253,6 +254,9 @@ def get_approval(
     return res
 
 
-router.include_router(basket_routes.router)  # /v1/baskets/...: same agent and UI rules, its own module
+# /v1/baskets/...: same agent and UI rules, in modules of their own. The intake routes come first, so that
+# /v1/baskets/template.xlsx and the dish-job paths are never taken for /v1/baskets/{basket_id}.
+router.include_router(intake_routes.router)
+router.include_router(basket_routes.router)
 
 __all__ = ["router", "Msg"]
