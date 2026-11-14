@@ -9,6 +9,7 @@ tool timeout from it, so the default timeout here is long enough to measure a sl
     uv run python scripts/eval_dish.py                  # all 8 dishes, at the request-path effort
     uv run python scripts/eval_dish.py --effort low     # measure the faster effort
     uv run python scripts/eval_dish.py --only lasagne-200 --dump /tmp/dishes
+    uv run python scripts/eval_dish.py --replay /tmp/dishes  # re-check saved plans, no Claude call
 
 Every run makes about 8 Claude calls and spends real tokens. Exit codes: 0 all pass, 1 a dish failed, 2 no
 Anthropic credentials (set ANTHROPIC_API_KEY or run `ant auth login`).
@@ -46,6 +47,7 @@ NOT_DAIRY += ("sugar", "strawberr", "flour", "egg", "gelatin", "baking powder", 
 ANIMAL_EN = re.compile(r"\b(beef|pork|chicken|turkey|lamb|bacon|ham|meat|mince|eggs?|honey|gelatine?)\b")
 DAIRY_EN = re.compile(r"\b(milk|cream|butter|cheese|yogh?urt|quark)\b")
 PLANT_EN = re.compile(r"\b(soy|soya|oat|oats|coconut|plant|plant-based|vegan|almond|peanut|beans?|peas?|lentils?)\b")
+FREE_FROM_EN = re.compile(r"\b(milk|dairy)-free\b")  # "milk-free margarine" is not dairy; "lactose-free milk" is
 
 
 def text(i: DishIngredient) -> str:
@@ -61,7 +63,7 @@ def clearly_not_dairy(i: DishIngredient) -> bool:
 
 
 def animal(i: DishIngredient, pattern: re.Pattern[str]) -> bool:
-    en = i.name.en.lower()
+    en = FREE_FROM_EN.sub("", i.name.en.lower())
     return bool(pattern.search(en)) and not PLANT_EN.search(en)
 
 
@@ -251,26 +253,40 @@ def main() -> int:
     )
     ap.add_argument("--only", action="append", choices=[c.name for c in CASES], help="run only these dishes")
     ap.add_argument("--dump", type=Path, help="write each dish's Claude and gateway plans as JSON into this folder")
+    ap.add_argument(
+        "--replay", type=Path, help="re-check the Claude plans a --dump saved in this folder, without calling Claude"
+    )
     args = ap.parse_args()
 
     settings = Settings()
     llm = AnthropicLLM(settings, timeout_s=args.timeout, dish_effort=args.effort)
-    try:
-        llm.check_credentials()
-    except LLMUnavailable as e:
-        print(f"eval_dish: {e}")
-        return 2
+    if not args.replay:
+        try:
+            llm.check_credentials()
+        except LLMUnavailable as e:
+            print(f"eval_dish: {e}")
+            return 2
 
     cases = [c for c in CASES if not args.only or c.name in args.only]
-    print(f"model {settings.dish_model}, effort {args.effort}, {args.timeout:.0f} s per attempt, {len(cases)} dishes")
+    if args.replay:
+        print(f"replaying the Claude plans in {args.replay}, {len(cases)} dishes")
+    else:
+        print(
+            f"model {settings.dish_model}, effort {args.effort}, {args.timeout:.0f} s per attempt, {len(cases)} dishes"
+        )
     if args.dump:
         args.dump.mkdir(parents=True, exist_ok=True)
     times: dict[str, float] = {}
     failed = 0
     for case in cases:
+        if args.replay:
+            saved = args.replay / f"{case.name}.claude.json"
+            if not saved.is_file():
+                print(f"SKIP  {case.name:<24} no saved plan")
+                continue
         start = time.perf_counter()
         try:
-            raw = llm.breakdown(case.inp)
+            raw = DishBreakdown.model_validate_json(saved.read_text()) if args.replay else llm.breakdown(case.inp)
         except (LLMUnavailable, LLMRefused) as e:
             times[case.name] = time.perf_counter() - start
             ok = isinstance(e, LLMRefused) and case.refusal_ok
@@ -293,11 +309,12 @@ def main() -> int:
             (args.dump / f"{case.name}.claude.json").write_text(raw.model_dump_json(indent=2), encoding="utf-8")
             (args.dump / f"{case.name}.gateway.json").write_text(final.model_dump_json(indent=2), encoding="utf-8")
 
-    t = sorted(times.values())
-    slow = [name for name, s in times.items() if s > llm_module.TIMEOUT_S]
-    print(f"\n{len(cases) - failed}/{len(cases)} passed.")
-    print(f"Time per dish: min {t[0]:.1f} s, median {statistics.median(t):.1f} s, max {t[-1]:.1f} s.")
-    print(f"Over the {llm_module.TIMEOUT_S:.0f} s request-path timeout: {', '.join(slow) or 'none'}.")
+    print(f"\n{len(times) - failed}/{len(times)} passed.")
+    if times and not args.replay:
+        t = sorted(times.values())
+        slow = [name for name, s in times.items() if s > llm_module.TIMEOUT_S]
+        print(f"Time per dish: min {t[0]:.1f} s, median {statistics.median(t):.1f} s, max {t[-1]:.1f} s.")
+        print(f"Over the {llm_module.TIMEOUT_S:.0f} s request-path timeout: {', '.join(slow) or 'none'}.")
     return 1 if failed else 0
 
 
