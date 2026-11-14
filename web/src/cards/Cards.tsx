@@ -71,7 +71,7 @@ export function QuoteCard() {
       <table>
         <tbody>
           {q.lines.map((l) => (
-            <tr key={l.line_id}><td>{l.qty} × {l.api_unit}</td><td>{l.name_fi}</td><td className="num">{eur(l.line_net)}</td></tr>
+            <tr key={l.line_id}><td className="qty">{l.qty} × {l.api_unit}</td><td>{l.name_fi}</td><td className="num">{eur(l.line_net)}</td></tr>
           ))}
         </tbody>
         <tfoot>
@@ -91,6 +91,19 @@ export function QuoteCard() {
       )}
     </section>
   );
+}
+
+const REASON_TEXT: Record<string, string> = {
+  OVER_ORDER_CAP: "Over your order cap", OVER_BUDGET: "Over the weekly budget", SUBSTITUTION: "Includes a substitute",
+  NET_ABOVE_LIST: "Contract price above list price", UNIT_MISMATCH: "Unit differs from the catalogue",
+};
+
+/** "OVER_ORDER_CAP: EUR 1010.00 is above ..." -> a plain title, the detail, and the code as a small tag. */
+function Reason({ text }: { text: string }) {
+  const [code = "", detail = ""] = text.split(/:\s*/, 2);
+  const title = REASON_TEXT[code];
+  if (!title) return <>{text}</>;
+  return <><strong>{title}</strong> {detail} <code>{code}</code></>;
 }
 
 /** Polls the approval every 2 s; on a change, tells the agent silently and nudges it (PLAN M9.4). */
@@ -117,8 +130,8 @@ export function ApprovalCard() {
   return (
     <section className={`card approval status-${a.status}`} aria-label="Approval">
       <header><span className="tier">Needs approval</span><span className="pid">{a.approval_id}</span></header>
-      <p className="big">{a.message_for_user.en}</p>
-      <ul>{a.approval.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+      <p className="big">⏳ {a.message_for_user.en}</p>
+      <ul className="reasons">{a.approval.reasons.map((r) => <li key={r}><Reason text={r} /></li>)}</ul>
       <p>Decide by {helsinki(a.approval.decide_by)} · approver: {a.approval.approver_role.replace("_", " ")}</p>
       <p className="muted">Approvals happen only on the manager's own console. Nobody can approve by voice.</p>
     </section>
