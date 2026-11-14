@@ -292,7 +292,11 @@ select:focus-visible, summary:focus-visible, [tabindex="-1"]:focus-visible { out
              text-align: right; background: transparent; color: var(--ink); font-variant-numeric: tabular-nums; }
 .qty-edit input[aria-invalid="true"] { background: #ffe1e1; }
 .qty-edit .unit, .qty-edit select { align-self: center; padding: 0 0.45rem 0 0.15rem; font-weight: 700; font-size: 0.85rem; }
-.qty-edit select { font: inherit; font-size: 0.85rem; border: 0; background: transparent; color: var(--ink); }
+.qty-edit select { align-self: stretch; min-width: 3.4rem; min-height: 2.4rem; padding: 0 0.4rem; font: inherit;
+                   font-weight: 700; font-size: 0.85rem; border: 0; border-left: 2px solid var(--ink); border-radius: 0;
+                   background: var(--paper); color: var(--ink); cursor: pointer; }
+.qty-edit select:hover:not(:disabled) { background: var(--accent); }
+.qty-edit select:disabled { color: var(--muted); cursor: progress; }
 .editor input[type="date"] { font: inherit; font-weight: 700; font-size: 0.9rem; padding: 0.35rem 0.45rem; color: var(--ink);
                              background: var(--panel); border: var(--bw) solid var(--ink); border-radius: var(--r);
                              box-shadow: var(--shadow-sm); max-width: 100%; }

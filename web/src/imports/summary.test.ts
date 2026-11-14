@@ -69,6 +69,7 @@ describe("confidence chips for photo rows", () => {
     items: [item("maito 20 l", "high"), item("voi 5 kg", "medium"), item("servetit 500 kpl", "low")],
     handwritten: true,
     unreadable: [],
+    need_date: null,
   };
 
   it("takes the extraction item at the row's place, or the item with the same text", () => {

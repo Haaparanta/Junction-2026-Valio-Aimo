@@ -3,7 +3,7 @@ import { basket, line, offer, quote } from "../testing/fixtures";
 import {
   allergenLabel, buildPatch, chipFlags, claimLabel, confirmationAnswer, countsText, flagLabel, flagNote, formatAmount, isIsoDate,
   MAX_AMOUNT, needsAttention, orderRequestMessage, parseAmount, quoteIsStale, refusal, statusLabel, stepAmount,
-  chipInfo, nextStep, parseReason, priceBreakdown, unitView,
+  chipInfo, nextStep, parseReason, priceBreakdown, unitChange, unitView,
 } from "./basket";
 
 describe("status and flag labels", () => {
@@ -190,6 +190,13 @@ describe("PATCH bodies", () => {
     expect(buildPatch({ offer_id: "OS-1:464076" })).toEqual({ amount: 0, unit: "", need_date: "", offer_id: "OS-1:464076" });
     expect(buildPatch({ amount: 5, unit: "KG" })).toEqual({ amount: 5, unit: "KG", need_date: "", offer_id: "" });
     expect(Object.keys(buildPatch({}))).toEqual(["amount", "unit", "need_date", "offer_id"]);
+  });
+  it("send a unit pick with the current amount, and wait when there is none", () => {
+    const pcs = line({ amount: 3, unit: "PCS", status: "needs_amount" });
+    expect(buildPatch(unitChange(pcs, "L", null)!)).toEqual({ amount: 3, unit: "L", need_date: "", offer_id: "" });
+    expect(buildPatch(unitChange(pcs, "L", 2.5)!)).toEqual({ amount: 2.5, unit: "L", need_date: "", offer_id: "" });
+    expect(unitChange(line({ amount: null, unit: null }), "KG", null)).toBeNull(); // types an amount first
+    expect(unitChange(pcs, "PCS", null)).toBeNull(); // nothing changed
   });
   it("only sends a full date", () => {
     expect(isIsoDate("2026-11-17")).toBe(true);
