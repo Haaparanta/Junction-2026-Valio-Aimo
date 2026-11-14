@@ -3,7 +3,7 @@
 import re
 
 import pytest
-from app.match import MAX_CANDIDATES, CatalogueEntry, catalogue_entries, match_item
+from app.match import MAX_CANDIDATES, CatalogueEntry, catalogue_entries, close_names, match_item
 
 BUTTER_GTIN = "6408430012345"
 CREAM_GTIN = "06408430054321"  # stored as a GTIN-14 with a leading zero
@@ -195,3 +195,24 @@ def test_catalogue_entries_have_six_digit_ids():
     first = entries[0]
     r = match_item(product_id=first.product_id)  # the default catalogue
     assert (r.kind, ids(r)) == ("exact", [first.product_id])
+
+
+def test_variants_come_after_every_other_candidate():
+    """Coffee milk and portion packs need the buyer's consent (Q-21): never the first choice for a plain 'maito'."""
+    coffee = "464237"  # Valio kahvimaito 1 l UHT laktoositon, a variant row in the stub catalogue
+    entries = catalogue_entries()
+    assert next(e for e in entries if e.product_id == coffee).variant
+    variant = {e.product_id for e in entries if e.variant}
+    for found in (ids(match_item(name="maito")), [c.product_id for c in close_names("maito")]):
+        assert found and found[0] not in variant
+        if coffee in found:
+            assert all(i in variant for i in found[found.index(coffee) :])
+    # On a small catalogue where the coffee milk scores best, it still comes last.
+    small = (
+        CatalogueEntry(coffee, "Valio kahvimaito 1 l", variant=True),
+        CatalogueEntry("464201", "Valio kevytmaito 1 l UHT laktoositon"),
+        CatalogueEntry("465731", "Valio laktoositon maitorahka 1 kg"),
+    )
+    r = match_item(name="maito", entries=small)
+    assert (r.kind, ids(r)) == ("several", ["464201", "465731", coffee])
+    assert [c.product_id for c in close_names("maito", small)] == ["464201", "465731", coffee]
