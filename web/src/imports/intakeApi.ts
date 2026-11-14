@@ -46,9 +46,11 @@ export const WRONG_SHEET_TYPE = "Use an Excel .xlsx file or a .csv file.";
 export const OLD_XLS = "Old Excel .xls files cannot be read. Save the file as .xlsx or .csv and try again.";
 export const SHEET_TOO_LARGE = "The file is over 1 MB. Split the list into smaller files.";
 export const SHEET_UNREADABLE = "The file could not be read, or it has more than 200 rows.";
-export const IMAGE_TOO_LARGE = "The photo is over 7.5 MB. Choose a smaller image.";
-export const WRONG_IMAGE_TYPE = "Use a JPEG, PNG, WebP or GIF image.";
-export const IMAGE_TOO_WIDE = "The image is too large: at most 8000 pixels per side.";
+// The photo sentences are gateway/app/images.py's own.
+export const EMPTY_PHOTO = "The photo is empty. Please take or choose the photo again.";
+export const IMAGE_TOO_LARGE = "The photo is too large. The limit is 7.5 MB.";
+export const WRONG_IMAGE_TYPE = "This file is not a supported image. Please send the photo as JPEG, PNG, WebP or GIF.";
+export const IMAGE_TOO_WIDE = "The photo is wider or taller than 8000 pixels. Please send a smaller photo.";
 export const AI_UNAVAILABLE = "The AI service is unavailable right now. Try again in a moment.";
 export const DISH_INVALID = "Check the dish name, the servings (1 to 5000) and the delivery date.";
 export const SIGN_IN = "Please sign in first.";

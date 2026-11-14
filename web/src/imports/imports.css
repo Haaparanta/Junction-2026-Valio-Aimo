@@ -83,9 +83,25 @@ button.intake-row-btn:disabled {
 .intake-summary summary { font-weight: 700; cursor: pointer; }
 .intake-summary summary:focus-visible { outline: 3px dashed var(--blue); outline-offset: 3px; }
 
+/* ---- Photo to basket ---- */
+.intake-preview {
+  margin: 0; overflow: hidden; background: var(--paper); border: var(--bw) solid var(--ink); border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+}
+.intake-preview img { display: block; width: 100%; height: auto; max-height: 22rem; object-fit: contain; background: #ffffff; }
+.intake.card .intake-preview p { padding: 0.8rem; overflow-wrap: anywhere; }
+.intake-read {
+  display: grid; gap: 0.4rem; padding: 0.6rem 0.75rem; background: var(--paper); border: 2px solid var(--ink);
+  border-radius: var(--r);
+}
+.intake.card p.intake-read-head { font-weight: 700; }
+.intake-unreadable { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.2rem; overflow-wrap: anywhere; }
+.chip.intake-kind { background: var(--yellow); }
+
 @media (max-width: 600px) {
   .intake-drop { padding: 1rem 0.75rem; }
   .intake-drop.large { min-height: 9rem; }
   .intake-drop p.intake-drop-title { font-size: 1.05rem; }
   button.intake-cta { width: 100%; }
+  .intake-preview img { max-height: 16rem; }
 }

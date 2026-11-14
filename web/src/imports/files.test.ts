@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SHEET_ACCEPT, sheetFileProblem } from "./files";
-import { OLD_XLS, WRONG_SHEET_TYPE } from "./intakeApi";
+import { SHEET_ACCEPT, photoFileProblem, sheetFileProblem } from "./files";
+import { EMPTY_PHOTO, OLD_XLS, WRONG_IMAGE_TYPE, WRONG_SHEET_TYPE } from "./intakeApi";
 
 const file = (name: string, type = "") => ({ name, type });
 
@@ -30,5 +30,22 @@ describe("which files go to the list import", () => {
 
   it("offers both extensions in the picker", () => {
     expect(SHEET_ACCEPT.split(",")).toEqual(expect.arrayContaining([".xlsx", ".csv"]));
+  });
+});
+
+describe("which files go to the photo import", () => {
+  const photo = (name: string, type: string, size = 1000) => ({ name, type, size });
+
+  it("takes any image the browser may decode, HEIC too, whatever the reported type", () => {
+    expect(photoFileProblem(photo("IMG_0001.jpg", "image/jpeg"))).toBeNull();
+    expect(photoFileProblem(photo("IMG_0002.HEIC", ""))).toBeNull(); // Chrome on Windows reports nothing
+    expect(photoFileProblem(photo("IMG_0003.heic", "image/heic"))).toBeNull();
+    expect(photoFileProblem(photo("lista", "image/png"))).toBeNull();
+  });
+
+  it("refuses an empty file and a file that is no image, in the gateway's words", () => {
+    expect(photoFileProblem(photo("IMG_0001.jpg", "image/jpeg", 0))).toBe(EMPTY_PHOTO);
+    expect(photoFileProblem(photo("tilaus.pdf", "application/pdf"))).toBe(WRONG_IMAGE_TYPE);
+    expect(photoFileProblem(photo("tilaus.csv", "text/csv"))).toBe(WRONG_IMAGE_TYPE);
   });
 });
