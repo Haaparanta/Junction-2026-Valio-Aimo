@@ -245,9 +245,19 @@ def _join(notes: list[str]) -> str:
     return "; ".join(n for n in notes if n)
 
 
+_MENTION = re.compile(r"[,(;]?\s*(?<!\w)(?:sisältää|sis\.|contains|innehåller)(?!\w).*$", re.IGNORECASE | re.DOTALL)
+
+
+@lru_cache(maxsize=1 << 16)
+def _product_part(name: str) -> str:
+    """The name without an ingredient mention: 'Barilla 6 kg Tagliatelle pasta, sisältää kananmunaa' is a pasta that
+    contains egg, not an egg, so 'kananmuna' must not match it (a real false positive on the catalogue)."""
+    return _MENTION.sub("", name) or name
+
+
 def _score(words: tuple[str, ...], head: str, name: str) -> tuple[float, bool]:
     """The entry's score, and whether it is complete: it holds every query word, and the head as a whole word."""
-    name_words = _normalise(name)[0]
+    name_words = _normalise(_product_part(name))[0]
     if not name_words or not words or not head:
         return 0.0, False
     found = [max(_word_score(w, n) for n in name_words) for w in words]
