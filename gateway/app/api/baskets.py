@@ -9,6 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path
 
+from .. import audit
 from ..basket import Added, BasketsDep, Changed, LineDraft, respond, warnings_for
 from ..contract import (
     AddToBasketRequest,
@@ -165,7 +166,21 @@ def remove_basket_line(body: BasketLineRequest, caller: CallerDep, baskets: Bask
     ),
 )
 def quote_basket(body: BasketRequest, caller: CallerDep, baskets: BasketsDep) -> BasketQuoteResponse:
-    return baskets.quote(caller.buyer, body.basket_id)
+    res = baskets.quote(caller.buyer, body.basket_id)
+    audit.log(
+        baskets.stubs,
+        caller,
+        "basket.quote",
+        as_of=baskets.settings.as_of,
+        response=res,
+        inputs={"basket_id": body.basket_id},
+        tokens=(res.quote.quote_jws if res.quote else None,),
+        quote_id=res.quote_id,
+        basket_id=res.basket_id,
+        summary=f"basket {res.basket_id} quote {res.quote_id or '-'}: {res.status}"
+        + (f", EUR {res.total_net} excl. VAT" if res.total_net else ""),
+    )
+    return res
 
 
 # ---- buyer UI: the web cookie only (voice headers alone get 401) ----

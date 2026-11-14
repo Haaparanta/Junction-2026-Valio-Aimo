@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Path
 
-from .. import orders
+from .. import audit, orders
 from ..basket import STALE_CONFIRM, STALE_ORDER, BasketsDep
 from ..contract import (
     ApprovalResponse,
@@ -31,8 +31,9 @@ from ..contract import (
     SubstitutesRequest,
     SubstitutesResponse,
 )
-from ..identity import CallerDep, SettingsDep, WebBuyerDep
+from ..identity import Caller, CallerDep, SettingsDep, WebBuyerDep
 from ..orders import IdempotencyConflict
+from ..signing import sha256_hex
 from ..stubs import get_product, plan_quantity, search, substitutes
 from . import approvals as approval_routes
 from . import baskets as basket_routes
@@ -148,6 +149,17 @@ def create_quote(body: CreateQuoteRequest, caller: CallerDep, stubs: StateDep, s
     res = stubs.create_quote(caller.buyer, body.offer_id, settings.as_of)
     if res is None:
         raise not_found("offer")
+    audit.log(
+        stubs,
+        caller,
+        "quote.create",
+        as_of=settings.as_of,
+        response=res,
+        inputs={"offer_id": body.offer_id},
+        tokens=(res.quote.quote_jws,),
+        quote_id=res.quote_id,
+        summary=f"quote {res.quote_id}: EUR {res.total_net} excl. VAT, fixed until {res.expires_at}",
+    )
     return res
 
 
@@ -166,16 +178,29 @@ def confirm_quote(
     """The on-screen Confirm, under the buyer's own web session. Agents cannot call this."""
     q = stubs.get_quote(buyer, quote_id)
     if q is not None and baskets.is_stale(q):  # its basket changed after the quote (B-06)
-        return ConfirmResponse(
+        res = ConfirmResponse(
             status="incomplete",
             reason_code="quote_stale",
             quote_id=quote_id,
             confirmed=False,
             message_for_user=STALE_CONFIRM,
         )
-    res = stubs.confirm(buyer, quote_id, datetime.fromisoformat(settings.as_of).isoformat())
+    else:
+        res = stubs.confirm(buyer, quote_id, datetime.fromisoformat(settings.as_of).isoformat())
     if res is None:
         raise not_found("quote")
+    audit.log(
+        stubs,
+        Caller("web", buyer),
+        "quote.confirm",
+        as_of=settings.as_of,
+        response=res,
+        decision="confirmed" if res.confirmed else None,
+        tokens=(q.quote_jws if q else None,),
+        quote_id=quote_id,
+        basket_id=q.basket_id if q else None,
+        summary=f"quote {quote_id} confirmed on screen" if res.confirmed else f"quote {quote_id} not confirmed",
+    )
     return res
 
 
@@ -212,8 +237,34 @@ def place_order(
     """Policy decides (M7): within the mandate the order completes; otherwise it waits for an approver, or is
     denied. Price and availability are checked again first (M8.3)."""
     q = stubs.get_quote(caller.buyer, body.quote_id)
+    inputs = {
+        "quote_id": body.quote_id,
+        "idempotency_key_sha256": sha256_hex(idempotency_key) if idempotency_key else None,
+        # An external agent cannot reach the on-screen Confirm: its own place_order call is the confirmation (M8.1).
+        "confirmation": "this place_order call" if caller.channel == "mcp" else "on-screen Confirm",
+    }
+
+    def logged(res: OrderResponse) -> OrderResponse:
+        o = res.order
+        audit.log(
+            stubs,
+            caller,
+            "order.place",
+            as_of=settings.as_of,
+            response=res,
+            inputs=inputs,
+            reasons=o.reasons if o else [],
+            tokens=(o.receipt_jws if o else None,),
+            order_id=res.order_id,
+            quote_id=body.quote_id,
+            approval_id=res.approval_id,
+            basket_id=q.basket_id if q else None,
+            summary=f"order {res.order_id or '-'} for quote {body.quote_id}: {res.status}",
+        )
+        return res
+
     if q is not None and baskets.is_stale(q):  # its basket changed after the quote (B-06)
-        return OrderResponse(status="incomplete", reason_code="quote_stale", message_for_user=STALE_ORDER)
+        return logged(OrderResponse(status="incomplete", reason_code="quote_stale", message_for_user=STALE_ORDER))
     offers_by_line = None
     if q is not None and q.basket_id:  # the offers the basket lines were priced with: flags, need, substitutes
         offers_by_line = {line.line_id: line.offer for line in baskets.get(caller.buyer, q.basket_id).lines}
@@ -231,11 +282,21 @@ def place_order(
             offers_by_line,
         )
     except IdempotencyConflict as e:
+        audit.log(
+            stubs,
+            caller,
+            "order.place",
+            as_of=settings.as_of,
+            decision="conflict",
+            inputs=inputs,
+            quote_id=body.quote_id,
+            summary="HTTP 409: the idempotency key was already used for a different order",
+        )
         raise HTTPException(409, "This idempotency key was already used for a different order.") from e
     held = res.status == "completed" or (res.status == "requires_escalation" and res.approval_id)
     if q is not None and q.basket_id and held:
         baskets.mark_ordered(caller.buyer, q.basket_id)  # read-only from now on (B-03)
-    return res
+    return logged(res)
 
 
 @router.get(
@@ -267,6 +328,19 @@ def cancel_order(
     res = orders.cancel_order(stubs, caller.buyer, order_id, settings.as_of)
     if res is None:
         raise not_found("order")
+    o = res.order
+    audit.log(
+        stubs,
+        caller,
+        "order.cancel",
+        as_of=settings.as_of,
+        response=res,
+        inputs={"reason": body.reason},
+        order_id=order_id,
+        quote_id=o.quote_id if o else None,
+        approval_id=res.approval_id,
+        summary=f"order {order_id} cancel asked: {res.status}",
+    )
     return res
 
 

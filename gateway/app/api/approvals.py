@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Path
 
-from .. import orders
+from .. import audit, orders
 from ..contract import ApprovalDecisionRequest, ApprovalListResponse, ApprovalResponse
 from ..identity import Buyer, SettingsDep, StoreDep, web_buyer
 from .common import StateDep, not_found
@@ -62,4 +62,21 @@ def decide(
         raise HTTPException(403, "An approver cannot decide their own order.") from e
     if res is None:
         raise not_found("approval")
+    a, o = res.approval, res.order
+    audit.log(
+        stubs,
+        approver,
+        "approval.decide",
+        as_of=settings.as_of,
+        response=res,
+        decision=f"{body.decision} -> {a.outcome or a.status}",
+        inputs={"decision": body.decision, "comment": body.comment},
+        reasons=o.reasons if o and a.outcome == "voided" else a.reasons,
+        tokens=(o.receipt_jws if o else None,),
+        order_id=a.order_id,
+        quote_id=a.quote_id,
+        approval_id=a.approval_id,
+        summary=f"{approver.display_name} chose {body.decision}: approval {a.outcome or a.status}, "
+        f"order {o.status if o else '-'}",
+    )
     return res

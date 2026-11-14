@@ -759,6 +759,7 @@ class StubState:
         self.offers: dict[str, Offer] = {}
         self.offer_sets: dict[str, OffersResponse] = {}
         self.offer_requests: dict[str, OffersRequest] = {}  # what each offer set was asked for ("Add to basket")
+        self.audit: Any = None  # audit.AuditLog over the app's store, set by create_app (PLAN M10)
 
     def get_offers(self, req: OffersRequest, as_of: str) -> OffersResponse:
         res = offers(req, as_of)

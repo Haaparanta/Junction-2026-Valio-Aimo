@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
+from .audit import log as audit_log
 from .contract import (
     Approval,
     ApprovalLine,
@@ -501,12 +502,24 @@ def _expire_if_due(state: StubState, approval_id: str, now: datetime | None) -> 
     a = state.approvals.get(approval_id)
     if now is None or a is None or a.status != "requires_escalation" or now < instant(a.decide_by):
         return
-    state.approvals[approval_id] = a.model_copy(
+    a = state.approvals[approval_id] = a.model_copy(
         update={"status": "canceled", "outcome": "expired", "reason_code": "quote_expired"}
     )
     o = state.orders.get(a.order_id)
     if o is not None and o.status == "requires_escalation":
         state.orders[o.order_id] = transition(o, "canceled", reason_code="quote_expired", canceled_at=now.isoformat())
+    audit_log(  # the gateway's own move (M10.2): nobody decided by decide_by
+        state,
+        None,
+        "approval.expire",
+        as_of=now.isoformat(),
+        response=approval_response(state, a),
+        decision="expired",
+        order_id=a.order_id,
+        quote_id=a.quote_id,
+        approval_id=approval_id,
+        summary=f"approval {approval_id} expired at {a.decide_by}; order {a.order_id} canceled",
+    )
 
 
 def get_order(state: StubState, buyer: Buyer, order_id: str, as_of: str | None = None) -> OrderResponse | None:

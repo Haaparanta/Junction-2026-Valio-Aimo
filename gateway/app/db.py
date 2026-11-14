@@ -1,4 +1,4 @@
-"""SQLite store for web logins, voice session bindings, post-call payloads and baskets.
+"""SQLite store for web logins, voice session bindings, post-call payloads, baskets and the audit trail.
 
 One short-lived connection per operation: FastAPI runs sync code on worker threads, and SQLite
 connections are thread-bound (tech-research §7). Read-modify-write goes through tx() (BEGIN IMMEDIATE).
@@ -66,6 +66,20 @@ CREATE TABLE IF NOT EXISTS dish_job (   -- the voice path of plan_dish: the open
 );
 CREATE INDEX IF NOT EXISTS dish_job_by_request ON dish_job (buyer_id, scope, request_key);
 CREATE INDEX IF NOT EXISTS dish_job_by_basket ON dish_job (basket_id, state);
+CREATE TABLE IF NOT EXISTS audit_event ( -- append-only, hash-chained trail (PLAN M10.1); the SQL lives in audit.py
+  seq INTEGER PRIMARY KEY,              -- 1, 2, 3 ... without gaps
+  order_id TEXT, quote_id TEXT, basket_id TEXT, conversation_id TEXT, action TEXT,  -- copies of entry fields
+  entry TEXT NOT NULL,                  -- RFC 8785 canonical JSON of the event, prev_hash included
+  hash TEXT NOT NULL                    -- SHA-256 hex of entry
+);
+CREATE INDEX IF NOT EXISTS audit_by_order ON audit_event (order_id);
+CREATE INDEX IF NOT EXISTS audit_by_quote ON audit_event (quote_id);
+CREATE INDEX IF NOT EXISTS audit_by_basket ON audit_event (basket_id);
+CREATE INDEX IF NOT EXISTS audit_by_conversation ON audit_event (conversation_id);
+CREATE TRIGGER IF NOT EXISTS audit_event_no_update BEFORE UPDATE ON audit_event
+BEGIN SELECT RAISE(ABORT, 'the audit trail is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS audit_event_no_delete BEFORE DELETE ON audit_event
+BEGIN SELECT RAISE(ABORT, 'the audit trail is append-only'); END;
 """
 
 
