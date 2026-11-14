@@ -12,6 +12,8 @@ CLAIM_ALLERGENS: dict[str, tuple[str, ...]] = {
     # (PLAN M4.3, the safer default; docs/basket-plan.md section 6, question 1).
     "FREE_FROM_GLUTEN": ("UW", "AW", "GB", "NR", "GO"),
     "VEGAN": ("AM", "AE", "AF", "AC", "UM"),  # milk, egg, fish, crustaceans, molluscs
+    # Fish, crustaceans and molluscs. Vegetarian food may contain milk and egg, so those stay allowed.
+    "VEGETARIAN": ("AF", "AC", "UM"),
     "FREE_FROM_EGGS": ("AE",),
     "FREE_FROM_SOY": ("AY",),
     "FREE_FROM_WHEAT": ("UW",),

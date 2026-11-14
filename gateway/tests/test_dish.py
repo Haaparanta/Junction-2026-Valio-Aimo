@@ -21,7 +21,9 @@ LACTOSE_FREE = DishInput(dish="mansikkakakku", servings=40, need_date="2026-11-1
         (["FREE_FROM_SOY"], [], ["AY"]),
         (["FREE_FROM_WHEAT"], [], ["UW"]),
         (["FREE_FROM_LACTOSE"], [], []),  # lactose-free dairy still contains milk protein: never AM
-        (["LOW_LACTOSE", "VEGETARIAN"], [], []),
+        (["LOW_LACTOSE"], [], []),
+        (["VEGETARIAN"], [], ["AC", "AF", "UM"]),  # fish, crustaceans and molluscs; milk and egg stay allowed
+        (["VEGETARIAN", "VEGAN"], [], ["AC", "AE", "AF", "AM", "UM"]),
         (["FREE_FROM_LACTOSE"], ["AM"], ["AM"]),  # a milk allergy sends AM itself
         (
             ["FREE_FROM_GLUTEN", "FREE_FROM_WHEAT", "VEGAN"],
@@ -132,19 +134,26 @@ def test_the_input_allergens_reach_every_ingredient():
     r = final(inp, plan(done, short))
     assert r.ingredients[0].search.must_not_allergens == sorted(["AN", *GLUTEN])
     assert r.ingredients[1].search.must_not_allergens == sorted({"AN", "AY", *GLUTEN})
+    # Only the code the buyer named (AN) is worth a warning; the gluten codes the claim implies are added silently.
     assert len(r.warnings) == 1 and bilingual(r.warnings)
     assert "sokeri en" in r.warnings[0].en and "jauho en" not in r.warnings[0].en
-    assert "oats" in r.warnings[0].en and "kaura" in r.warnings[0].fi
+    assert "tree nuts" in r.warnings[0].en and "pähkinät" in r.warnings[0].fi
+    assert "oats" not in r.warnings[0].en and "kaura" not in r.warnings[0].fi
 
 
-def test_allergens_added_to_every_ingredient_are_one_short_warning():
+def test_codes_a_claim_implies_are_added_without_a_warning():
     vegan = DishInput(dish="chili sin carne", servings=40, need_date="2026-11-16", must_claims=["VEGAN"])
     beans = ingredient("pavut", must_claims=["VEGAN"])
     r = final(vegan, plan(beans, ingredient("sipuli", must_claims=[])))
     assert all(i.search.must_not_allergens == ["AC", "AE", "AF", "AM", "UM"] for i in r.ingredients)
-    assert [w.en for w in r.warnings] == [
-        "Allergen exclusions (crustaceans, egg, fish, milk, molluscs) were added to every ingredient."
-    ]
+    assert r.warnings == []
+
+
+def test_a_named_allergen_missing_everywhere_is_one_short_warning():
+    milk_free = DishInput(dish="lihapullat", servings=40, need_date="2026-11-16", must_not_allergens=["AM"])
+    r = final(milk_free, plan(ingredient("jauheliha", must_claims=[]), ingredient("sipuli", must_claims=[])))
+    assert all("AM" in i.search.must_not_allergens for i in r.ingredients)
+    assert [w.en for w in r.warnings] == ["Allergen exclusions (milk) were added to every ingredient."]
     assert "kaikille aineksille" in r.warnings[0].fi and bilingual(r.warnings)
 
 

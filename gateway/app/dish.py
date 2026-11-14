@@ -89,6 +89,9 @@ def finalize_breakdown(inp: DishInput, out: DishBreakdown) -> DishBreakdown:
     # The input's diet needs, as allergen codes, on every ingredient. Codes Claude added itself are kept: an extra
     # exclusion can only narrow the search, never make it unsafe.
     required = set(expand_diet(inp.must_claims, inp.must_not_allergens))
+    # Codes a claim implies (VEGAN, FREE_FROM_GLUTEN ...) are added silently: applying the buyer's diet the same way
+    # everywhere is expected (B-13). Only a code the buyer named that Claude left out is worth a warning.
+    explicit = set(inp.must_not_allergens)
     added: set[str] = set()
     changed: list[tuple[str, str]] = []
     for k, ing in enumerate(kept):
@@ -98,14 +101,15 @@ def finalize_breakdown(inp: DishInput, out: DishBreakdown) -> DishBreakdown:
                 update={"must_not_allergens": sorted(required | set(ing.search.must_not_allergens))}
             )
             ing = ing.model_copy(update={"search": search})
-            added |= missing
-            changed.append(_names(ing))
+            if missing & explicit:
+                added |= missing & explicit
+                changed.append(_names(ing))
         kept[k] = ing.model_copy(update={"per_serving": round(ing.amount / inp.servings, DECIMALS)})
     if changed:
         codes = sorted(added)
         fi_codes = ", ".join(ALLERGEN_NAMES[c][0] for c in codes)
         en_codes = ", ".join(ALLERGEN_NAMES[c][1] for c in codes)
-        if len(changed) == len(kept):  # e.g. VEGAN, whose codes the prompt leaves to the gateway (B-13)
+        if len(changed) == len(kept):  # e.g. a milk allergy Claude ignored everywhere
             msg = Msg(
                 fi=f"Allergeenirajaus ({fi_codes}) lisättiin kaikille aineksille.",
                 en=f"Allergen exclusions ({en_codes}) were added to every ingredient.",
