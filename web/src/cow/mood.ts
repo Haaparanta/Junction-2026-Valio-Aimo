@@ -1,9 +1,14 @@
 /** Moo moods come from the gateway's status in tool results, not from the LLM (PLAN M17.3). */
 export type Mood = "greet" | "happy" | "question" | "alarmed" | "celebrate";
 
+/** Agent tools that change a basket on the gateway: the basket card fetches its basket again after each. */
+export const BASKET_TOOLS = new Set([
+  "add_to_basket", "update_basket_line", "remove_basket_line", "quote_basket", "plan_dish", "place_order",
+]);
+
 export const GATEWAY_TOOLS = new Set([
   "search_products", "get_product", "plan_quantity", "get_offers", "find_substitutes", "create_quote", "place_order",
-  "get_order", "get_approval", "cancel_order",
+  "get_order", "get_approval", "cancel_order", "get_basket", ...BASKET_TOOLS,
 ]);
 
 export type ToolEvent = { is_error: boolean; is_blocked?: boolean; truncated?: boolean; full_tool_result?: string };

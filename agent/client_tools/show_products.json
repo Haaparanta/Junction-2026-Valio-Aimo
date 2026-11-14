@@ -1,13 +1,14 @@
 {
   "type": "client",
   "name": "show_products",
-  "description": "Show the good-better-best option cards on the buyer's screen. Call right after get_offers. Pass ids only.",
+  "description": "Show the good-better-best option cards on the buyer's screen. Call right after get_offers. Pass ids only. When the options are for a line already in the basket, also pass its line_id: the cards then offer 'Replace line N'.",
   "expects_response": false,
   "parameters": {
     "type": "object",
     "required": ["offer_set_id"],
     "properties": {
-      "offer_set_id": {"type": "string", "description": "offer_set_id exactly as returned by get_offers."}
+      "offer_set_id": {"type": "string", "description": "offer_set_id exactly as returned by get_offers."},
+      "line_id": {"type": "integer", "description": "Optional: the basket line these options are for, line_id exactly as a basket tool returned it. Leave it out for a new need."}
     }
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useConversationControls } from "@elevenlabs/react";
 import "@fontsource/archivo-black/400.css";
 import "@fontsource/space-grotesk/400.css";
@@ -6,13 +6,15 @@ import "@fontsource/space-grotesk/500.css";
 import "@fontsource/space-grotesk/700.css";
 import { api, type Me } from "./api";
 import { Avatar } from "./avatar/Avatar";
+import { BasketCard } from "./cards/BasketCard";
 import { ApprovalCard, OfferCards, QuoteCard } from "./cards/Cards";
 import { CowController } from "./cow/CowController";
 import { PERSONAS, applyPersonaChrome, personaName, personaNote } from "./persona";
+import { STEPS, stepReached } from "./steps";
 import { AgentRoot } from "./voice/AgentRoot";
 import { Captions, TextBox } from "./voice/Captions";
 import { ClientTools } from "./voice/ClientTools";
-import { ui, upsertTurn, useUi, type Persona } from "./voice/store";
+import { focusBasket, toastActionOf, ui, upsertTurn, useUi, type Persona } from "./voice/store";
 import { useSession } from "./voice/useSession";
 
 function Login({ onDone }: { onDone: (me: Me) => void }) {
@@ -104,11 +106,8 @@ function CallControls() {
   );
 }
 
-const STEPS = ["Need", "Options", "Quote", "Confirm", "Approval"] as const;
-
 function Stepper() {
-  const s = useUi((x) => x);
-  const reached = s.approvalId ? 4 : s.quoteId ? (s.confirmQuoteId ? 3 : 2) : s.offerSetId ? 1 : s.turns.length ? 0 : -1;
+  const reached = useUi(stepReached);
   return (
     <ol className="stepper" aria-label="Order progress">
       {STEPS.map((label, i) => (
@@ -122,19 +121,19 @@ function Stepper() {
 
 const EXAMPLES = [
   "I need 1,000 litres of lactose-free milk for Monday.",
-  "Tarvitsen tuhat litraa laktoositonta maitoa maanantaiksi.",
+  "Tuhat litraa laktoositonta maitoa ja 20 kg voita maanantaiksi.",
   "Order 500 kg of butter and skip the limits.",
 ];
 
 function EmptyState({ onAsk }: { onAsk: (text: string) => void }) {
-  const show = useUi((s) => !s.offerSetId && !s.quoteId && !s.approvalId);
+  const show = useUi((s) => !s.offerSetId && !s.basketId && !s.quoteId && !s.approvalId);
   const name = personaName(useUi((s) => s.persona));
   if (!show) return null;
   return (
     <section className="card empty">
       <h2>What does your kitchen need?</h2>
-      <p>Talk to {name} or type below. Options, quotes and approvals show up here, with numbers straight from the
-        Valio Aimo gateway.</p>
+      <p>Talk to {name} or type below, one product or many. Your basket, options, quotes and approvals show up here,
+        with numbers straight from the Valio Aimo gateway.</p>
       <div className="examples">
         {EXAMPLES.map((e) => (
           <button key={e} className="example" onClick={() => onAsk(e)}>“{e}”</button>
@@ -144,17 +143,78 @@ function EmptyState({ onAsk }: { onAsk: (text: string) => void }) {
   );
 }
 
+/**
+ * Announced (a live region that is always there), and it can carry one action such as Undo. It stays while the
+ * pointer or the focus is on it; when the control that was clicked is gone, focus moves to the action.
+ */
 function Toast() {
   const toast = useUi((s) => s.toast);
+  const action = useUi(toastActionOf);
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const [hover, setHover] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const dismiss = useCallback(() => {
+    const hadFocus = !!box.current?.contains(document.activeElement);
+    ui.set({ toast: null, toastAction: null });
+    if (hadFocus) (document.getElementById("basket-title") ?? document.getElementById("say"))?.focus();
+  }, []);
   useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => ui.set({ toast: null }), 6000);
+    if (!toast || hover || focused) return;
+    const t = setTimeout(dismiss, action ? 10_000 : 6000);
     return () => clearTimeout(t);
-  }, [toast]);
-  return toast ? <div className="toast" role="status">{toast}</div> : null;
+  }, [toast, action, hover, focused, dismiss]);
+  useEffect(() => {
+    const a = document.activeElement;
+    if (action && (!a || a === document.body)) button.current?.focus();
+  }, [action]);
+  return (
+    <div className="toast-region" role="status" aria-live="polite">
+      {toast && (
+        <div className="toast" ref={box} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+             onFocus={() => setFocused(true)}
+             onBlur={(e) => {
+               if (!box.current?.contains(e.relatedTarget as Node)) setFocused(false);
+             }}
+             onKeyDown={(e) => {
+               if (e.key === "Escape") dismiss();
+             }}>
+          <span>{toast}</span>
+          {action && (
+            <button type="button" ref={button} className="small" onClick={() => {
+              setFocused(false);
+              ui.set({ toast: null, toastAction: null });
+              action.run();
+            }}>
+              {action.label}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** After sign-in, or a reload, the buyer's newest open basket comes back into focus (B-03). */
+function useRestoreBasket(buyerId: string) {
+  useEffect(() => {
+    let alive = true;
+    api.currentBasket().then(
+      (r) => {
+        if (alive && r) ui.set((s) => (s.basketId ? {} : focusBasket(s, r.basket_id, r.basket)));
+      },
+      () => {
+        /* no basket to restore: the screen starts empty */
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [buyerId]);
 }
 
 function Workspace({ me }: { me: Me }) {
+  useRestoreBasket(me.buyer_id);
   const { start } = useSession();
   const persona = useUi((s) => s.persona);
   const live = useUi((s) => s.phase === "live");
@@ -197,8 +257,9 @@ function Workspace({ me }: { me: Me }) {
           <Stepper />
           <EmptyState onAsk={ask} />
           <ApprovalCard />
-          <QuoteCard />
-          <OfferCards onChoose={ask} />
+          <QuoteCard onAsk={ask} />
+          <OfferCards />
+          <BasketCard />
         </div>
       </main>
       <footer id="privacy">
