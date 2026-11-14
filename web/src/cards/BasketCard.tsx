@@ -3,14 +3,21 @@
  * quote for all. Every field is a control: the product opens its details, the amount and the date edit in place,
  * × removes with Undo. Edits go to the gateway and the card renders its answer; it computes no number itself.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { api, errorText, eur, helsinki, type Basket, type BasketLine, type Offer } from "../api";
+import { DishForm, DishHeader } from "../imports/DishForm";
+import { buyerLanguage } from "../imports/dish";
+import { ImportSummary } from "../imports/ImportSummary";
+import { PhotoImport } from "../imports/PhotoImport";
+import { SheetImport } from "../imports/SheetImport";
+import { CONFIDENCE_CHIP } from "../imports/summary";
+import { IMPORT_SUMMARY_ID, useIntake } from "../imports/useIntake";
 import { BASKET_TOOLS } from "../cow/mood";
 import { personaName } from "../persona";
 import { basketNote, changeKind, quoteNote } from "../voice/notes";
-import { focusBasket, receiveBasket, showQuote, showToast, ui, useUi } from "../voice/store";
+import { focusBasket, intakeOf, receiveBasket, showQuote, showToast, ui, useUi } from "../voice/store";
 import { useAgentNote } from "../voice/useAgentNote";
-import { applyBasket, hasBasket, quoteBasketNow, restoreLine } from "./actions";
+import { applyBasket, goToBasketLine, hasBasket, quoteBasketNow, restoreLine } from "./actions";
 import {
   buildPatch, chipFlags, countsText, formatAmount, lineDomId, needsAttention, refusal, type LineChange,
 } from "./basket";
@@ -43,6 +50,17 @@ function ProductCell({ l, onUse }: { l: BasketLine; onUse?: (o: Offer) => Promis
         <strong className="pname">{name}</strong>
       )}
       {l.name_fi && l.need_text && <span className="need">for “{l.need_text}”</span>}
+      {l.raw_text && l.source === "image" && (
+        <span className="need read-as">
+          Read as “{l.raw_text}”
+          {l.confidence && <> <span className={`chip conf c-${l.confidence}`}>{CONFIDENCE_CHIP[l.confidence]}</span></>}
+        </span>
+      )}
+      {l.notes.length > 0 && (
+        <ul className="line-notes" aria-label={`Notes on line ${l.line_id}`}>
+          {l.notes.map((n, i) => <li key={i}>{n.en || n.fi}</li>)}
+        </ul>
+      )}
     </>
   );
 }
@@ -110,7 +128,28 @@ function Totals({ b }: { b: Basket }) {
   );
 }
 
-export function BasketCard() {
+type Panel = "photo" | "dish" | null;
+
+/** Import list, Photo and Dish on the basket card: the list imports in place, the other two open their card below. */
+function IntakeBar({ basketId, panel, panelId, onPanel, disabled }: {
+  basketId: string; panel: Panel; panelId: string; onPanel: (p: Panel) => void; disabled: boolean;
+}) {
+  const intake = useIntake();
+  const toggle = (p: Exclude<Panel, null>) => onPanel(panel === p ? null : p);
+  return (
+    <div className="intake-bar" role="group" aria-label="Add more to this basket">
+      <SheetImport basketId={basketId} onImported={intake.sheet} variant="compact" disabled={disabled} />
+      <div className="intake-bar-more">
+        <button type="button" aria-expanded={panel === "photo"} aria-controls={`${panelId}-photo`} disabled={disabled}
+                onClick={() => toggle("photo")}>📷 Photo of a list</button>
+        <button type="button" aria-expanded={panel === "dish"} aria-controls={`${panelId}-dish`} disabled={disabled}
+                onClick={() => toggle("dish")}>🍰 A dish</button>
+      </div>
+    </div>
+  );
+}
+
+export function BasketCard({ asOf }: { asOf: string }) {
   const basketId = useUi((s) => s.basketId);
   const basket = useUi((s) => (s.basket && s.basket.basket_id === s.basketId ? s.basket : null));
   const alert = useUi((s) => (s.basketAlert && s.basketAlert.basketId === s.basketId ? s.basketAlert : null));
@@ -123,6 +162,10 @@ export function BasketCard() {
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<number | null>(null);
   const notify = useAgentNote(); // during a call, every change on screen is told to the agent
+  const intake = useIntake();
+  const imported = useUi(intakeOf);
+  const [panel, setPanel] = useState<Panel>(null);
+  const panelId = useId();
 
   useEffect(() => {
     if (!basketId) return;
@@ -141,7 +184,10 @@ export function BasketCard() {
     };
   }, [basketId, agentChange]);
 
-  useEffect(() => setQuoteError(null), [basketId]);
+  useEffect(() => {
+    setQuoteError(null);
+    setPanel(null);
+  }, [basketId]);
 
   if (!basketId) return null;
   const startNew = () => ui.set((s) => focusBasket(s, null));
@@ -216,69 +262,97 @@ export function BasketCard() {
 
   const showSaved = () => ui.set((s) => showQuote(s, b.quote_id, b.basket_id));
 
+  const showLine = (lineId: number) => goToBasketLine(b.basket_id, lineId);
+
   return (
-    <section className={`card basket${ordered ? " ordered" : ""}`} aria-labelledby="basket-title">
-      <header>
-        <span className="tier">{ordered ? "Ordered" : "Basket"}</span>
-        <span className="pid">{b.basket_id}</span>
-      </header>
-      <h2 id="basket-title" tabIndex={-1}>
-        Your basket · {b.lines.length === 1 ? "1 line" : `${b.lines.length} lines`}
-      </h2>
-      {ordered ? (
-        <div className="locked" role="note">
-          <p><strong>Ordered.</strong> This basket is read-only now. Start a new basket to order more.</p>
-          <button type="button" onClick={startNew}>Start a new basket</button>
-        </div>
-      ) : (
-        b.lines.length > 0 && (
-          <p className="hint">Click a product for its details, or change an amount or a date: the gateway prices the line again.</p>
-        )
-      )}
-      {b.lines.length === 0 ? (
-        <p className="muted">The basket is empty. Tell {name} what you need, or add an option card.</p>
-      ) : (
-        <table className="lines" role="table" aria-label={`Lines of basket ${b.basket_id}`}>
-          <thead role="rowgroup">
-            <tr role="row">
-              <th role="columnheader" scope="col" className="no">#</th>
-              <th role="columnheader" scope="col">Product</th>
-              <th role="columnheader" scope="col">Amount</th>
-              <th role="columnheader" scope="col">Delivery</th>
-              <th role="columnheader" scope="col" className="num">Line total excl. VAT</th>
-              {!ordered && <th role="columnheader" scope="col" className="rm"><span className="sr-only">Remove</span></th>}
-            </tr>
-          </thead>
-          <tbody role="rowgroup">
-            {b.lines.map((l) => (
-              <LineRow key={l.line_id} l={l} readOnly={ordered} open={open(l)} removing={removing === l.line_id}
-                       onRemove={(x) => void remove(x)} onPatch={patchLine} />
+    <>
+      <section className={`card basket${ordered ? " ordered" : ""}`} aria-labelledby="basket-title">
+        <header>
+          <span className="tier">{ordered ? "Ordered" : "Basket"}</span>
+          <span className="pid">{b.basket_id}</span>
+        </header>
+        <h2 id="basket-title" tabIndex={-1}>
+          Your basket · {b.lines.length === 1 ? "1 line" : `${b.lines.length} lines`}
+        </h2>
+        {ordered ? (
+          <div className="locked" role="note">
+            <p><strong>Ordered.</strong> This basket is read-only now. Start a new basket to order more.</p>
+            <button type="button" onClick={startNew}>Start a new basket</button>
+          </div>
+        ) : (
+          b.lines.length > 0 && (
+            <p className="hint">Click a product for its details, or change an amount or a date: the gateway prices the line again.</p>
+          )
+        )}
+        {b.dishes.length > 0 && (
+          <div className="dishes" aria-label="Planned dishes" role="group">
+            {b.dishes.map((d, i) => (
+              <DishHeader key={`${d.dish}-${d.need_date}-${i}`} dish={d} lines={b.lines} onShowLine={showLine} />
             ))}
-          </tbody>
-        </table>
-      )}
-      <Totals b={b} />
-      {alert && (
-        <p className="alert" role="alert">
-          {alert.message}
-          {alert.lines.length > 0 && ` Lines to resolve: ${alert.lines.join(", ")}.`}
-        </p>
-      )}
-      {b.quote_id && b.quote_stale && !ordered && (
-        <p className="warn-box">Quote {b.quote_id} is out of date: the basket changed after it. Get a new quote below.</p>
-      )}
-      {!ordered && (
-        <div className="actions">
-          <button type="button" className="primary" disabled={quoting || b.lines.length === 0} aria-busy={quoting}
-                  onClick={() => void getQuote()}>
-            {quoting ? "Getting the quote…" : "Get one quote for all"}
-          </button>
-          {b.quote_id && !b.quote_stale && quoteId !== b.quote_id && (
-            <button type="button" onClick={showSaved}>Show quote {b.quote_id}</button>
-          )}
+          </div>
+        )}
+        {b.lines.length === 0 ? (
+          <p className="muted">The basket is empty. Tell {name} what you need, add an option card, or import a list below.</p>
+        ) : (
+          <table className="lines" role="table" aria-label={`Lines of basket ${b.basket_id}`}>
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader" scope="col" className="no">#</th>
+                <th role="columnheader" scope="col">Product</th>
+                <th role="columnheader" scope="col">Amount</th>
+                <th role="columnheader" scope="col">Delivery</th>
+                <th role="columnheader" scope="col" className="num">Line total excl. VAT</th>
+                {!ordered && <th role="columnheader" scope="col" className="rm"><span className="sr-only">Remove</span></th>}
+              </tr>
+            </thead>
+            <tbody role="rowgroup">
+              {b.lines.map((l) => (
+                <LineRow key={l.line_id} l={l} readOnly={ordered} open={open(l)} removing={removing === l.line_id}
+                         onRemove={(x) => void remove(x)} onPatch={patchLine} />
+              ))}
+            </tbody>
+          </table>
+        )}
+        <Totals b={b} />
+        {alert && (
+          <p className="alert" role="alert">
+            {alert.message}
+            {alert.lines.length > 0 && ` Lines to resolve: ${alert.lines.join(", ")}.`}
+          </p>
+        )}
+        {b.quote_id && b.quote_stale && !ordered && (
+          <p className="warn-box">Quote {b.quote_id} is out of date: the basket changed after it. Get a new quote below.</p>
+        )}
+        {!ordered && (
+          <div className="actions">
+            <button type="button" className="primary" disabled={quoting || b.lines.length === 0} aria-busy={quoting}
+                    onClick={() => void getQuote()}>
+              {quoting ? "Getting the quote…" : "Get one quote for all"}
+            </button>
+            {b.quote_id && !b.quote_stale && quoteId !== b.quote_id && (
+              <button type="button" onClick={showSaved}>Show quote {b.quote_id}</button>
+            )}
+          </div>
+        )}
+        {quoteError && <p className="error" role="alert">{quoteError}</p>}
+        {!ordered && (
+          <IntakeBar basketId={b.basket_id} panel={panel} panelId={panelId} onPanel={setPanel} disabled={quoting} />
+        )}
+      </section>
+      {!ordered && panel === "photo" && (
+        <div id={`${panelId}-photo`} className="intake-panel">
+          <PhotoImport basketId={b.basket_id} onImported={intake.photo} />
         </div>
       )}
-      {quoteError && <p className="error" role="alert">{quoteError}</p>}
-    </section>
+      {!ordered && panel === "dish" && (
+        <div id={`${panelId}-dish`} className="intake-panel">
+          <DishForm basketId={b.basket_id} asOf={asOf} language={buyerLanguage()} onPlanned={intake.dish} />
+        </div>
+      )}
+      {imported && (
+        <ImportSummary id={IMPORT_SUMMARY_ID} response={imported.response} onShowLine={showLine}
+                       onDismiss={() => ui.set({ intake: null })} />
+      )}
+    </>
   );
 }

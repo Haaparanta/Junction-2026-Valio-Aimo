@@ -1,6 +1,6 @@
 /** A tiny external store: SDK callbacks write here, components subscribe with selectors (no per-frame renders). */
 import { useSyncExternalStore } from "react";
-import type { Basket, Msg } from "../api";
+import type { Basket, ImportResponse, Msg } from "../api";
 
 export type Persona = "aino" | "cow";
 export type Transport = "webrtc" | "relay" | "websocket" | "text";
@@ -14,6 +14,8 @@ export type ToastAction = { text: string; label: string; run: () => void };
 export type PlacedOrder = { quoteId: string; orderId: string | null; status: string; message: Msg };
 /** Lines that stopped quote_basket (basket_incomplete), with the gateway's message. */
 export type BasketAlert = { basketId: string; lines: number[]; message: string };
+/** The latest list or photo import, shown under the basket card it went into (ImportSummary). */
+export type IntakeResult = { basketId: string; kind: "sheet" | "photo"; response: ImportResponse };
 
 export type Ui = {
   phase: "idle" | "connecting" | "live" | "error";
@@ -34,6 +36,7 @@ export type Ui = {
   basket: Basket | null; // the latest gateway answer for basketId, newest version wins
   replaceLine: ReplaceLine | null;
   basketAlert: BasketAlert | null;
+  intake: IntakeResult | null;
   quoteId: string | null;
   quoteBasketId: string | null; // the basket the quote on screen is for; null for a single-offer quote
   approvalId: string | null;
@@ -45,7 +48,7 @@ export type Ui = {
 export const initialUi: Ui = {
   phase: "idle", transport: null, conversationId: null, mode: "listening", userSpeaking: false, pendingTools: {},
   turns: [], toast: null, toastAction: null, lastError: null, lastOutcome: null, queue: null, persona: "aino",
-  offerSetId: null, basketId: null, basket: null, replaceLine: null, basketAlert: null, quoteId: null,
+  offerSetId: null, basketId: null, basket: null, replaceLine: null, basketAlert: null, intake: null, quoteId: null,
   quoteBasketId: null, approvalId: null, confirmQuoteId: null, order: null, queuedText: null,
 };
 
@@ -104,6 +107,19 @@ export function focusBasket(s: Ui, basketId: string | null, basket: Basket | nul
   }
   return next;
 }
+
+/**
+ * A list or photo import went into basket `r.basket_id`: that basket comes into focus with the gateway's answer, and
+ * the summary shows under it. A photo that gave no rows only puts its basket in focus when one already was.
+ */
+export function receiveImport(s: Ui, kind: IntakeResult["kind"], r: ImportResponse): Partial<Ui> {
+  if (kind === "photo" && !(Array.isArray(r.rows) && r.rows.length > 0) && s.basketId === null) return {};
+  return { ...focusBasket(s, r.basket_id, r.basket), intake: { basketId: r.basket_id, kind, response: r } };
+}
+
+/** The import summary to show for the basket in focus, if any. */
+export const intakeOf = (s: Pick<Ui, "intake" | "basketId">): IntakeResult | null =>
+  s.intake && s.intake.basketId === s.basketId ? s.intake : null;
 
 /** A gateway answer for the basket in focus; answers for any other basket are ignored. */
 export function receiveBasket(s: Ui, basket: Basket): Partial<Ui> {

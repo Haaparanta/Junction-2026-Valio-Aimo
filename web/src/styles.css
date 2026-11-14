@@ -345,6 +345,21 @@ button.reason-btn { text-decoration-thickness: 1px; }
                  border-radius: 6px; }
 .reason-detail p { margin: 0.15rem 0; }
 
+/* Intake on the page: the empty state's ways in, the basket card's bar, planned dishes and line notes. */
+.empty h3.ways-title { font-size: 1rem; margin: 1.1rem 0 0.6rem; }
+.ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1.25rem; align-items: start; }
+.intake-bar { display: grid; gap: 0.6rem; margin-top: 0.9rem; padding-top: 0.8rem; border-top: 2px dashed var(--ink); }
+.intake-bar-more { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.intake-bar-more button[aria-expanded="true"] { background: var(--ink); color: var(--paper); }
+.intake-panel { min-width: 0; }
+.dishes { display: grid; gap: 0.7rem; margin: 0.4rem 0 0.8rem; }
+.read-as { margin-top: 0.2rem; }
+.chip.conf { font-size: 0.68rem; padding: 0 0.45rem; vertical-align: 0.05em; }
+.chip.conf.c-high { background: var(--lime); }
+.chip.conf.c-medium { background: var(--yellow); }
+.chip.conf.c-low { background: var(--pink); }
+.line-notes { margin: 0.3rem 0 0; padding-left: 1.1rem; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
+
 /* ---- Avatar rig. The driver writes --mouth-open, --blink, --breath and data-mouth. ---- */
 .avatar { margin: 0; text-align: center; background: var(--panel); border: var(--bw) solid var(--ink); border-radius: var(--r);
           box-shadow: var(--shadow); padding: 0.8rem 0.8rem 0.6rem; }

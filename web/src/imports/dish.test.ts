@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DIETS, buildDishRequest, dateOf, dishProblems, servingsOf, type DishFormValues } from "./dish";
+import { DIETS, buildDishRequest, buyerLanguage, dateOf, dishProblems, dishView, servingsOf, type DishFormValues } from "./dish";
+import { dish, line, msg } from "./fixtures";
 
 const form = (over: Partial<DishFormValues> = {}): DishFormValues => ({
   dish: "mansikkakakku", servings: "40", needDate: "2026-11-16", diets: [], ...over,
@@ -76,5 +77,41 @@ describe("checks before sending", () => {
     expect(dateOf("2026-11-14")).toBe("2026-11-14");
     expect(dateOf("")).toBe("");
     expect(dateOf("14.11.2026")).toBe("");
+  });
+});
+
+describe("the planned dish on the basket card", () => {
+  it("shows the gateway's names, servings, date, batch note, warnings and assumptions", () => {
+    const d = dish({ warnings: [msg("No lactose-free quark.")], assumptions: [msg("A sponge cake."), msg("", "")] });
+    expect(dishView(d)).toEqual({
+      name: "Strawberry cake", nameFi: "Mansikkakakku", meta: "40 servings · delivery 2026-11-16 · 3 lines in the basket",
+      batchNote: "About 5 cakes of 8 portions.", warnings: ["No lactose-free quark."], assumptions: ["A sponge cake."],
+      lineIds: [5, 6, 7], openLineIds: [], removed: 0,
+    });
+  });
+
+  it("lists only the dish's lines still in the basket, and those that need the buyer", () => {
+    const d = dish({ line_ids: [7, 5, 6] });
+    const v = dishView(d, [line({ line_id: 5 }), line({ line_id: 7, status: "needs_choice" }), line({ line_id: 9 })]);
+    expect(v.lineIds).toEqual([5, 7]);
+    expect(v.openLineIds).toEqual([7]);
+    expect(v.removed).toBe(1);
+    expect(v.meta).toBe("40 servings · delivery 2026-11-16 · 2 lines in the basket");
+  });
+
+  it("falls back to the Finnish name or the dish as asked, and says 1 serving", () => {
+    const v = dishView(dish({ dish_name: msg("", "Kakku"), servings: 1, line_ids: [1] }));
+    expect(v.name).toBe("Kakku");
+    expect(v.nameFi).toBeNull();
+    expect(v.meta).toBe("1 serving · delivery 2026-11-16 · 1 line in the basket");
+    expect(dishView(dish({ dish_name: msg("", "") })).name).toBe("mansikkakakku");
+  });
+});
+
+describe("the buyer's language", () => {
+  it("is Finnish only when the browser's first language is", () => {
+    expect(buyerLanguage(["fi-FI", "en"])).toBe("fi");
+    expect(buyerLanguage(["en-GB", "fi"])).toBe("en");
+    expect(buyerLanguage([])).toBe("en");
   });
 });

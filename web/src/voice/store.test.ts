@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { basket } from "../testing/fixtures";
 import {
-  createStore, focusBasket, initialUi, optionsFor, quoteLoaded, receiveBasket, showQuote, showToast, toastActionOf,
+  createStore, focusBasket, initialUi, intakeOf, optionsFor, quoteLoaded, receiveBasket, receiveImport, showQuote, showToast,
+  toastActionOf,
   type Ui,
 } from "./store";
 
@@ -103,5 +104,30 @@ describe("toast with an action", () => {
     st.set((s) => focusBasket(s, "B-0A1B2C3D4E", basket()));
     st.set((s) => receiveBasket(s, basket({ version: 2 })));
     expect(st.get().basket?.version).toBe(2);
+  });
+});
+
+describe("receiveImport", () => {
+  const answer = (rows: number, basketId = "B-0A1B2C3D4E") => ({
+    status: "ok", reason_code: null, message_for_user: { fi: "", en: "" }, warnings: [], basket_id: basketId,
+    basket: basket({ basket_id: basketId }), counts: {}, extraction: null,
+    rows: Array.from({ length: rows }, (_, i) => ({
+      row_number: i + 2, status: "priced" as const, message: { fi: "", en: "" }, line_id: i + 1, raw_text: "x",
+    })),
+  });
+
+  it("puts the import's basket in focus with the gateway's answer and keeps the summary for it", () => {
+    const r = answer(2);
+    const s = state({ ...receiveImport(state(), "sheet", r) });
+    expect(s.basketId).toBe("B-0A1B2C3D4E");
+    expect(s.basket).toBe(r.basket);
+    expect(intakeOf(s)).toEqual({ basketId: "B-0A1B2C3D4E", kind: "sheet", response: r });
+    expect(intakeOf({ ...s, basketId: "B-FFFFFFFFFF" })).toBeNull(); // another basket in focus: no summary
+  });
+
+  it("leaves the screen alone when a photo gave no rows and no basket was in focus", () => {
+    expect(receiveImport(state(), "photo", answer(0))).toEqual({});
+    const inFocus = state({ basketId: "B-0A1B2C3D4E" });
+    expect(receiveImport(inFocus, "photo", answer(0)).intake?.kind).toBe("photo");
   });
 });

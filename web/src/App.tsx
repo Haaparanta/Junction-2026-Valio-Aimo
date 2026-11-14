@@ -9,6 +9,11 @@ import { Avatar } from "./avatar/Avatar";
 import { BasketCard } from "./cards/BasketCard";
 import { ApprovalCard, OfferCards, QuoteCard } from "./cards/Cards";
 import { CowController } from "./cow/CowController";
+import { DishForm } from "./imports/DishForm";
+import { buyerLanguage } from "./imports/dish";
+import { PhotoImport } from "./imports/PhotoImport";
+import { SheetImport } from "./imports/SheetImport";
+import { useIntake } from "./imports/useIntake";
 import { PERSONAS, applyPersonaChrome, personaName, personaNote } from "./persona";
 import { STEPS, stepReached } from "./steps";
 import { AgentRoot } from "./voice/AgentRoot";
@@ -125,21 +130,34 @@ const EXAMPLES = [
   "Order 500 kg of butter and skip the limits.",
 ];
 
-function EmptyState({ onAsk }: { onAsk: (text: string) => void }) {
+/**
+ * Before there is a basket: four ways in. Talk or type to the agent, drop an Excel or CSV list, send a photo of a
+ * list, or name a dish. Each intake starts a basket; the page then shows it instead of this.
+ */
+function EmptyState({ onAsk, asOf }: { onAsk: (text: string) => void; asOf: string }) {
   const show = useUi((s) => !s.offerSetId && !s.basketId && !s.quoteId && !s.approvalId);
   const name = personaName(useUi((s) => s.persona));
+  const intake = useIntake();
   if (!show) return null;
   return (
-    <section className="card empty">
-      <h2>What does your kitchen need?</h2>
-      <p>Talk to {name} or type below, one product or many. Your basket, options, quotes and approvals show up here,
-        with numbers straight from the Valio Aimo gateway.</p>
-      <div className="examples">
-        {EXAMPLES.map((e) => (
-          <button key={e} className="example" onClick={() => onAsk(e)}>“{e}”</button>
-        ))}
+    <>
+      <section className="card empty" aria-labelledby="empty-title">
+        <h2 id="empty-title">What does your kitchen need?</h2>
+        <p>Talk to {name} or type below, one product or many. Your basket, options, quotes and approvals show up here,
+          with numbers straight from the Valio Aimo gateway.</p>
+        <div className="examples">
+          {EXAMPLES.map((e) => (
+            <button key={e} className="example" onClick={() => onAsk(e)}>“{e}”</button>
+          ))}
+        </div>
+        <h3 className="ways-title">Or start from a list</h3>
+        <SheetImport basketId={null} onImported={intake.sheet} />
+      </section>
+      <div className="ways">
+        <PhotoImport basketId={null} onImported={intake.photo} />
+        <DishForm basketId={null} asOf={asOf} language={buyerLanguage()} onPlanned={intake.dish} />
       </div>
-    </section>
+    </>
   );
 }
 
@@ -255,11 +273,11 @@ function Workspace({ me }: { me: Me }) {
         </div>
         <div className="right">
           <Stepper />
-          <EmptyState onAsk={ask} />
+          <EmptyState onAsk={ask} asOf={me.as_of} />
           <ApprovalCard />
           <QuoteCard onAsk={ask} />
           <OfferCards />
-          <BasketCard />
+          <BasketCard asOf={me.as_of} />
         </div>
       </main>
       <footer id="privacy">

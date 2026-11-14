@@ -5,9 +5,9 @@
  * the batch note, the warnings and the assumptions, all as the gateway sent them. Dish names are data: text only.
  */
 import { useId, useRef, useState, type FormEvent } from "react";
-import type { BasketDish, DishResponse } from "../api";
+import type { BasketDish, BasketLine, DishResponse } from "../api";
 import {
-  DIETS, MAX_DISH_CHARS, MAX_SERVINGS, buildDishRequest, dateOf, dishProblems, type DietKey, type DishField,
+  DIETS, MAX_DISH_CHARS, MAX_SERVINGS, buildDishRequest, dateOf, dishProblems, dishView, type DietKey, type DishField,
 } from "./dish";
 import { IntakeError, errorText, planDish } from "./intakeApi";
 import "./imports.css";
@@ -25,31 +25,46 @@ export type DishFormProps = {
   disabled?: boolean;
 };
 
-/** A dish's header as the gateway planned it. The basket card can show it for each of basket.dishes (M27.2). */
-export function DishHeader({ dish }: { dish: BasketDish }) {
-  const lines = dish.line_ids.length;
+/**
+ * A dish's header as the gateway planned it: in the dish card after Send, and on the basket card for each of
+ * basket.dishes (M27.2). With `lines` (the basket's lines) it lists the dish's lines still in the basket, and with
+ * `onShowLine` each is a button that shows its basket line.
+ */
+export function DishHeader({ dish, lines = null, onShowLine }: {
+  dish: BasketDish; lines?: readonly BasketLine[] | null; onShowLine?: (lineId: number) => void;
+}) {
+  const v = dishView(dish, lines);
   return (
     <div className="intake-dish-head">
       <p className="intake-dish-name">
-        {dish.dish_name.en}
-        {dish.dish_name.fi && dish.dish_name.fi !== dish.dish_name.en && <span lang="fi"> · {dish.dish_name.fi}</span>}
+        {v.name}
+        {v.nameFi && <span lang="fi"> · {v.nameFi}</span>}
       </p>
-      <p className="intake-dish-meta">
-        {dish.servings} {dish.servings === 1 ? "serving" : "servings"} · delivery {dish.need_date} ·{" "}
-        {lines} {lines === 1 ? "line" : "lines"} in the basket
-      </p>
-      {dish.batch_note.en && <p>{dish.batch_note.en}</p>}
-      {dish.warnings.length > 0 && (
-        <div className="intake-warnings">
+      <p className="intake-dish-meta">{v.meta}</p>
+      {v.batchNote && <p>{v.batchNote}</p>}
+      {v.warnings.length > 0 && (
+        <div className="intake-warnings" role="note">
           <p className="intake-warn-head">Check before you order</p>
-          <ul>{dish.warnings.map((w, i) => <li key={i}>{w.en}</li>)}</ul>
+          <ul>{v.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
         </div>
       )}
-      {dish.assumptions.length > 0 && (
+      {v.assumptions.length > 0 && (
         <div className="intake-assumptions">
           <p className="intake-assume-head">Assumed</p>
-          <ul>{dish.assumptions.map((a, i) => <li key={i}>{a.en}</li>)}</ul>
+          <ul>{v.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul>
         </div>
+      )}
+      {onShowLine && v.lineIds.length > 0 && (
+        <p className="intake-dish-lines">
+          Lines:{" "}
+          {v.lineIds.map((id) => (
+            <button key={id} type="button" className={`small${v.openLineIds.includes(id) ? " open-line" : ""}`}
+                    aria-label={`Show line ${id}${v.openLineIds.includes(id) ? ", needs your attention" : ""}`}
+                    onClick={() => onShowLine(id)}>
+              {id}{v.openLineIds.includes(id) ? " !" : ""}
+            </button>
+          ))}
+        </p>
       )}
     </div>
   );

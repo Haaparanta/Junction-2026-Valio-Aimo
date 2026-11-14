@@ -4,6 +4,7 @@
  * one allergen the screen sends itself (AM): lactose-free food may still contain milk protein, so a lactose-free
  * claim never excludes milk.
  */
+import type { BasketDish, BasketLine } from "../api";
 import { basketTarget, type Allergen, type Claim, type PlanDishRequest } from "./intakeApi";
 
 export type DietKey = "lactose_free" | "gluten_free" | "vegan" | "vegetarian" | "egg_free" | "milk_free";
@@ -66,5 +67,36 @@ export function buildDishRequest(values: DishFormValues, language: "fi" | "en", 
     must_not_allergens: chosen.flatMap((d) => (d.allergen ? [d.allergen] : [])),
     language,
     basket_id: basketTarget(basketId),
+  };
+}
+
+/** The language the buyer speaks, for the dish request: Finnish when the browser says so, else English. */
+export function buyerLanguage(languages: readonly string[] = globalThis.navigator?.languages ?? []): "fi" | "en" {
+  return languages[0]?.toLowerCase().startsWith("fi") ? "fi" : "en";
+}
+
+/**
+ * A planned dish as the basket card shows it (M27.2), from the gateway's BasketDish and the basket's lines: the
+ * names, the servings and date, the batch note, the warnings (shown stronger) and the assumptions, and the dish's
+ * lines that are still in the basket, with those that need the buyer. Nothing is computed but which lines remain.
+ */
+export type DishView = {
+  name: string; nameFi: string | null; meta: string; batchNote: string; warnings: string[]; assumptions: string[];
+  lineIds: number[]; openLineIds: number[]; removed: number;
+};
+
+export function dishView(d: BasketDish, lines: readonly Pick<BasketLine, "line_id" | "status">[] | null = null): DishView {
+  const name = d.dish_name.en || d.dish_name.fi || d.dish;
+  const nameFi = d.dish_name.fi && d.dish_name.fi !== name ? d.dish_name.fi : null;
+  const present = lines === null ? d.line_ids : d.line_ids.filter((id) => lines.some((l) => l.line_id === id));
+  const open = lines === null ? [] : present.filter((id) => lines.find((l) => l.line_id === id)?.status !== "priced");
+  const n = present.length;
+  const meta = `${d.servings} ${d.servings === 1 ? "serving" : "servings"} · delivery ${d.need_date} · ` +
+    `${n} ${n === 1 ? "line" : "lines"} in the basket`;
+  const text = (m: { en: string; fi: string }) => m.en || m.fi;
+  return {
+    name, nameFi, meta, batchNote: text(d.batch_note), warnings: d.warnings.map(text).filter(Boolean),
+    assumptions: d.assumptions.map(text).filter(Boolean), lineIds: [...present].sort((a, b) => a - b),
+    openLineIds: [...open].sort((a, b) => a - b), removed: d.line_ids.length - n,
   };
 }

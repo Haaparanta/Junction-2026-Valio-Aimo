@@ -155,3 +155,13 @@ div.intake-dish-head p.intake-assume-head { font-weight: 700; color: var(--ink);
   button.intake-cta { width: 100%; }
   .intake-preview img { max-height: 16rem; }
 }
+
+/* The dish's lines on the basket card: each one shows its basket line. */
+div.intake-dish-head p.intake-dish-lines { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; font-weight: 700; }
+div.intake-dish-head p.intake-dish-lines button.small { min-width: 2.4rem; }
+div.intake-dish-head p.intake-dish-lines button.open-line { background: var(--yellow); }
+div.intake-dish-head:focus-within button:focus-visible { outline: 3px dashed var(--blue); outline-offset: 3px; }
+.intake-summary.card > header .pid { margin-left: auto; }
+.intake-summary.card > header button.intake-close { width: 2rem; height: 2rem; font-size: 1.1rem; box-shadow: none; }
+.intake-summary:focus { outline: none; }
+.intake-summary:focus-visible { outline: 3px dashed var(--blue); outline-offset: 3px; }

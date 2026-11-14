@@ -15,6 +15,10 @@ export type ImportSummaryProps = {
   response: ImportResponse;
   /** Shows that basket line, for example by scrolling to it and opening its editor. */
   onShowLine: (lineId: number) => void;
+  /** When given, a close button hides the summary. */
+  onDismiss?: () => void;
+  /** The section's id, so the page can move focus to it. */
+  id?: string;
 };
 
 function SummaryRow({ row, photo, confidence, onShowLine }: {
@@ -41,7 +45,7 @@ function SummaryRow({ row, photo, confidence, onShowLine }: {
   );
 }
 
-export function ImportSummary({ response, onShowLine }: ImportSummaryProps) {
+export function ImportSummary({ response, onShowLine, onDismiss, id }: ImportSummaryProps) {
   const heading = useId();
   const text = summaryText(response.counts);
   const photo = response.extraction !== null;
@@ -53,10 +57,13 @@ export function ImportSummary({ response, onShowLine }: ImportSummaryProps) {
                 confidence={photo ? confidenceFor(r, response) : null} onShowLine={onShowLine} />
   );
   return (
-    <section className="card intake-summary" aria-labelledby={heading}>
+    <section className="card intake-summary" aria-labelledby={heading} id={id} tabIndex={id ? -1 : undefined}>
       <header>
         <span className="tier">{photo ? "Read from a photo" : "Imported list"}</span>
         <span className="pid">{response.basket_id}</span>
+        {onDismiss && (
+          <button type="button" className="icon intake-close" aria-label="Hide the import summary" onClick={onDismiss}>×</button>
+        )}
       </header>
       <h2 id={heading}>{text.en}</h2>
       <p className="intake-fi" lang="fi">{text.fi}</p>
