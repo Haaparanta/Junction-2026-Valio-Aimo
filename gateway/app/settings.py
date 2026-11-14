@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     # Shared secret sent by every webhook tool as X-Gateway-Key; also stored as an ElevenLabs workspace secret.
     gateway_platform_key: str | None = None
 
+    # Claude (docs/basket-plan.md B-08). The key is optional: without it the SDK reads ANTHROPIC_AUTH_TOKEN or the
+    # `ant auth login` profile itself. It is only ever handed to the Anthropic SDK, never to the browser or a response.
+    anthropic_api_key: str | None = None
+    vision_model: str = "claude-opus-5-5"  # reads photos of shopping lists (M28)
+    dish_model: str = "claude-opus-5-5"  # breaks a dish down into ingredients (M26, M27)
+
     public_host: str | None = None  # e.g. abcd.ngrok-free.app, without scheme
     db_path: Path = Field(default=REPO_ROOT / "data" / "gateway.db")
     session_ttl_s: int = 1800  # opaque voice session token lifetime (PLAN M14.2)
