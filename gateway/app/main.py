@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api import session, tools, webhooks
 from .db import Store
+from .llm import LLM, AnthropicLLM
 from .settings import Settings, get_settings
 from .stubs import StubState
 
@@ -16,13 +17,16 @@ The LLM plans and explains; this gateway decides. Every tool answers HTTP 200 wi
 canned from the headline example W-03 until the real services land."""
 
 
-def create_app(settings: Settings | None = None, voice: session.VoiceProvider | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, voice: session.VoiceProvider | None = None, llm: LLM | None = None
+) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="Valio Aimo agent gateway", version="0.1.0", description=DESCRIPTION)
     app.dependency_overrides[get_settings] = lambda: settings
     app.state.store = Store(settings.db_path)
     app.state.stubs = StubState()
     app.state.voice = voice or session.ElevenLabsVoice(settings)
+    app.state.llm = llm or AnthropicLLM(settings)
 
     @app.get("/health", tags=["ops"])
     def health() -> dict:
