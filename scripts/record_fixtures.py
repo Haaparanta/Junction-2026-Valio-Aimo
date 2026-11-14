@@ -47,14 +47,50 @@ CATALOG_RANGE = range(460000, 477546)  # 17,546 contiguous catalogue ids (A-07)
 GROUPS: dict[str, list[str]] = {
     # W-03: the 29 genuine lactose-free milk options for the headline example.
     "w03_milk_options": [
-        "464306", "464401", "464237", "463335", "464201", "464073", "464398", "463779", "469363",
-        "462775", "463380", "463203", "469119", "469287", "464119", "465039", "476240", "463038",
-        "469330", "469386", "466288", "462921", "464198", "464768", "465149", "462626", "464179",
-        "464399", "464440",
+        "464306",
+        "464401",
+        "464237",
+        "463335",
+        "464201",
+        "464073",
+        "464398",
+        "463779",
+        "469363",
+        "462775",
+        "463380",
+        "463203",
+        "469119",
+        "469287",
+        "464119",
+        "465039",
+        "476240",
+        "463038",
+        "469330",
+        "469386",
+        "466288",
+        "462921",
+        "464198",
+        "464768",
+        "465149",
+        "462626",
+        "464179",
+        "464399",
+        "464440",
     ],
     # W-01 exclusions and W-07 plant-drink variants.
-    "w01_exclusions": ["469331", "472492", "476957", "477050", "469266", "473142", "463047",
-                       "469541", "475534", "469457", "460032"],
+    "w01_exclusions": [
+        "469331",
+        "472492",
+        "476957",
+        "477050",
+        "469266",
+        "473142",
+        "463047",
+        "469541",
+        "475534",
+        "469457",
+        "460032",
+    ],
     "w07_plant_drinks": ["468465", "474864", "464013"],
     # Demo step 6 (butter); the catalogue snapshot also covers every butter product.
     "demo_butter": ["463233", "463197"],
@@ -90,11 +126,41 @@ GROUPS: dict[str, list[str]] = {
     "x32": ["463059", "463053", "466152", "473463", "463451"],
     "x33": ["471661"],
     # Other ids the findings cite (A-02, A-03, A-05, A-08, A-11, A-12, A-19).
-    "doc_examples": ["460013", "460063", "463989", "460056", "463779", "463038", "465244", "461294",
-                     "467042", "460635", "465987", "474449", "468648", "462321", "474880", "470434",
-                     "460465", "461268", "461174", "460857", "461440", "465056", "467730", "471480",
-                     "476936", "462629", "462762", "476525", "467204", "467157", "469402", "462395",
-                     "465611"],
+    "doc_examples": [
+        "460013",
+        "460063",
+        "463989",
+        "460056",
+        "463779",
+        "463038",
+        "465244",
+        "461294",
+        "467042",
+        "460635",
+        "465987",
+        "474449",
+        "468648",
+        "462321",
+        "474880",
+        "470434",
+        "460465",
+        "461268",
+        "461174",
+        "460857",
+        "461440",
+        "465056",
+        "467730",
+        "471480",
+        "476936",
+        "462629",
+        "462762",
+        "476525",
+        "467204",
+        "467157",
+        "469402",
+        "462395",
+        "465611",
+    ],
 }
 # X-19 deposit codes and X-20 malformed ids: recorded raw, never sent by the gateway client.
 MALFORMED = ["999999", "460063 ", " 460063", "0460063", "477546", "459999", "abc", "4", "147"]
@@ -106,8 +172,13 @@ def find_key() -> str:
         return key
     candidates = [REPO / ".env"]
     try:  # in a git worktree, the .env usually lives in the main checkout
-        common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                                cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
+        common = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
         candidates.append(Path(common).parent / ".env")
     except (OSError, subprocess.CalledProcessError):
         pass
@@ -170,8 +241,15 @@ def main() -> None:
 
     status, raw = request("GET", "/ping", key)
     (OUT / "ping.json").write_bytes(raw)
-    files.append({"endpoint": "ping", "path": "ping.json", "http_status": status,
-                  "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)})
+    files.append(
+        {
+            "endpoint": "ping",
+            "path": "ping.json",
+            "http_status": status,
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "bytes": len(raw),
+        }
+    )
     if status != 200:
         sys.exit(f"/ping returned HTTP {status}; check the key and the base URL")
 
@@ -188,13 +266,24 @@ def main() -> None:
                     time_now = json.loads(raw).get("timeNow")
                 except (ValueError, AttributeError):
                     pass
-                files.append({"set": set_name, "endpoint": endpoint, "requested_date": req_date,
-                              "path": str(rel), "http_status": status, "ids": part,
-                              "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw),
-                              "time_now": time_now, "request": {"customer": CUSTOMER,
-                                                                "requestedDate": req_date}})
-                print(f"{set_name:9} {req_date} {endpoint:12} chunk {n:2d}: HTTP {status}, "
-                      f"{len(part):4d} ids, {len(raw):8d} bytes")
+                files.append(
+                    {
+                        "set": set_name,
+                        "endpoint": endpoint,
+                        "requested_date": req_date,
+                        "path": str(rel),
+                        "http_status": status,
+                        "ids": part,
+                        "sha256": hashlib.sha256(raw).hexdigest(),
+                        "bytes": len(raw),
+                        "time_now": time_now,
+                        "request": {"customer": CUSTOMER, "requestedDate": req_date},
+                    }
+                )
+                print(
+                    f"{set_name:9} {req_date} {endpoint:12} chunk {n:2d}: HTTP {status}, "
+                    f"{len(part):4d} ids, {len(raw):8d} bytes"
+                )
                 if status != 200 and set_name != "malformed":
                     print(f"  warning: HTTP {status} for {rel}", file=sys.stderr)
 

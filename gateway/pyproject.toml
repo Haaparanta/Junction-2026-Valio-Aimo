@@ -1,0 +1,29 @@
+[project]
+name = "valio-gateway"
+version = "0.1.0"
+description = "Agent gateway: REST /v1 tools, voice session and audit for the Valio Aimo buyer agent"
+requires-python = "==3.13.*"
+# Exact pins from docs/tech-research.md §3.
+dependencies = [
+  "fastapi==0.162.7",
+  "starlette==1.10.0",
+  "uvicorn[standard]==0.54.0",
+  "pydantic==2.14.3",
+  "pydantic-settings==2.16.3",
+  "mcp==2.3.0",
+  "httpx==0.28.1",
+  "anyio==4.16.0",
+  "elevenlabs==2.78.0",
+  "joserfc==1.8.0",
+  "cryptography==50.0.2",
+  "rfc8785==0.1.4",
+  "rapidfuzz==3.14.6",
+  "ijson==3.6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

@@ -1,0 +1,36 @@
+# uv workspace root: `uv sync` from the repo root installs the gateway and the dev tools.
+[project]
+name = "valio-aimo-trusted-trade"
+version = "0.1.0"
+description = "Trusted Trade Agents for Valio Aimo (Junction 2026): workspace root"
+requires-python = "==3.13.*"
+dependencies = ["valio-gateway"]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["gateway"]
+
+[tool.uv.sources]
+valio-gateway = { workspace = true }
+
+[dependency-groups]
+dev = ["ruff==0.15.12", "pytest==9.1.0", "pytest-asyncio==1.4.0"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+extend-exclude = ["web", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"gateway/tests/**" = ["S105", "S106"]
+"scripts/**" = ["S603", "S607", "S310"]
+
+[tool.pytest.ini_options]
+testpaths = ["gateway/tests"]
+asyncio_mode = "auto"
