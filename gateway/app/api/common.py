@@ -1,9 +1,10 @@
-"""Helpers shared by the /v1 routers: the stub state, 404s and the x-agent-tool extension."""
+"""Helpers shared by the /v1 routers: the state, the backend, 404s and the x-agent-tool extension."""
 
 from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request
 
+from ..backend import Backend
 from ..stubs import StubState
 
 AGENT = ["agent-tools"]
@@ -15,6 +16,14 @@ def state(request: Request) -> StubState:
 
 
 StateDep = Annotated[StubState, Depends(state)]
+
+
+def backend(request: Request) -> Backend:
+    """The app's product facts and prices (app/backend.py), picked once by create_app."""
+    return request.app.state.backend
+
+
+BackendDep = Annotated[Backend, Depends(backend)]
 
 
 def tool(description: str, *, filters: list[str], timeout: int = 10, **voice: Any) -> dict:

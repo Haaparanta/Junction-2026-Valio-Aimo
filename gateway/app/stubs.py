@@ -745,10 +745,16 @@ def substitutes(req: SubstitutesRequest) -> SubstitutesResponse:
 
 
 class StubState:
-    """Offers, quotes, orders and approvals, in memory. Quotes are idempotent by (buyer, offer); the order and
-    approval logic (PLAN M8, M9) is in orders.py, which keeps its records here."""
+    """Quotes, orders and approvals, in memory. Quotes are idempotent by (buyer, offer); the order and approval logic
+    (PLAN M8, M9) is in orders.py, which keeps its records here. Product facts, prices and the offers made come from
+    `backend` (app/backend.py: this module's catalogue, or the real one), picked once by create_app."""
 
-    def __init__(self) -> None:
+    def __init__(self, backend: Any = None) -> None:
+        if backend is None:
+            from .backend import StubBackend  # backend.py imports this module
+
+            backend = StubBackend()
+        self.backend = backend
         self.lock = threading.Lock()
         self.quotes: dict[str, Quote] = {}
         self.orders: dict[str, Order] = {}
@@ -756,18 +762,23 @@ class StubState:
         self.order_meta: dict[str, Any] = {}  # order_id -> orders.OrderMeta (owner, the quote as ordered, ...)
         self.idempotency: dict[str, tuple[str, str]] = {}  # key -> (payload fingerprint, order_id)
         self.seq = 0  # orders and approvals in the order they were made (newest first in the approver's list)
-        self.offers: dict[str, Offer] = {}
-        self.offer_sets: dict[str, OffersResponse] = {}
-        self.offer_requests: dict[str, OffersRequest] = {}  # what each offer set was asked for ("Add to basket")
         self.audit: Any = None  # audit.AuditLog over the app's store, set by create_app (PLAN M10)
 
+    @property
+    def offers(self) -> dict[str, Offer]:
+        """Every offer the backend made, by offer_id."""
+        return self.backend.registered_offers
+
+    @property
+    def offer_sets(self) -> dict[str, OffersResponse]:
+        return self.backend.offer_sets
+
+    @property
+    def offer_requests(self) -> dict[str, OffersRequest]:
+        return self.backend.offer_requests
+
     def get_offers(self, req: OffersRequest, as_of: str) -> OffersResponse:
-        res = offers(req, as_of)
-        with self.lock:
-            self.offers.update({o.offer_id: o for o in res.options})
-            self.offer_sets[res.offer_set_id] = res
-            self.offer_requests[res.offer_set_id] = req
-        return res
+        return self.backend.offers(req, as_of)
 
     def get_offer_set(self, offer_set_id: str) -> OffersResponse | None:
         return self.offer_sets.get(offer_set_id)
@@ -783,41 +794,38 @@ class StubState:
         (None, None) when the product is not in the catalogue or is not priced per `unit`. The offer is registered,
         so create_quote and a basket line can use its offer_id.
         """
-        p = PRODUCTS.get(product_id)
-        if p is None or p.base_unit != unit:
-            return None, None
-        d, amt = date.fromisoformat(need_date), Decimal(str(amount))
-        qty, ob, blocking = assess(p, amt, d, instant(as_of))
-        if blocking or ob is None:
-            return None, refusal(p, qty, d, ob, blocking)
-        offer_set_id = "OP-" + sha(f"{p.id}|{num(amt)}|{unit}|{need_date}")[:8].upper()  # one product, one need
-        o = make_offer(p, qty, d, ob, offer_set_id, "other")
-        with self.lock:
-            self.offers[o.offer_id] = o
-        return o, None
+        return self.backend.price_product(product_id, amount, unit, need_date, as_of)
+
+    def _expiry(self, issued: datetime, lines: list[QuoteLine], order_by: Iterable[str]) -> datetime:
+        """The backend's expiry (TTL, cut-offs, validTo), and never after an offer's own order-by time."""
+        return min(
+            [
+                self.backend.quote_expiry(issued, [(x.product_id, x.delivery_date) for x in lines]),
+                *(instant(ob) for ob in order_by if ob),
+            ]
+        )
 
     def create_quote(self, buyer: Buyer, offer_id: str, as_of: str) -> QuoteResponse | None:
         o = self.offers.get(offer_id)
-        p = PRODUCTS.get(o.product_id) if o else None
+        p = self.backend.product(o.product_id) if o else None
         if o is None or p is None:
             return None
         quote_id = "Q-" + sha(f"{buyer.buyer_id}|{offer_id}")[:10].upper()
         with self.lock:
             q = self.quotes.get(quote_id)
             if q is None:
-                qty = o.qty
-                line_net = p.price * qty
-                line_vat = vat_of(line_net, p.vat)
+                line_net = Decimal(o.total_net)
+                line_vat = vat_of(line_net, p.vat_rate)
                 issued = datetime.fromisoformat(as_of)
                 line = QuoteLine(
                     line_id=1,
-                    product_id=p.id,
-                    name_fi=p.name,
-                    api_unit=p.api_unit,
-                    qty=qty,
-                    unit_price_net=money(p.price),
+                    product_id=o.product_id,
+                    name_fi=o.name_fi,
+                    api_unit=o.api_unit,
+                    qty=o.qty,
+                    unit_price_net=o.unit_price_net,
                     line_net=money(line_net),
-                    vat_rate=str(p.vat),
+                    vat_rate=str(p.vat_rate),
                     line_vat=money(line_vat),
                     line_gross=money(line_net + line_vat),
                     delivery_date=o.delivery_date,
@@ -832,8 +840,8 @@ class StubState:
                     total_gross=money(line_net + line_vat),
                     delivery_date=o.delivery_date,
                     issued_at=issued.isoformat(),
-                    expires_at=quote_expiry(issued, [(p.id, o.delivery_date)]).isoformat(),
-                    evidence=stub_evidence([line]),
+                    expires_at=self._expiry(issued, [line], [o.order_by]).isoformat(),
+                    evidence=self.backend.quote_evidence([line]),
                 )
                 q = sign_quote(q)
                 self.quotes[quote_id] = q
@@ -851,7 +859,7 @@ class StubState:
                 f"(EUR {q.total_gross} incl. VAT). The price is fixed until {q.expires_at[11:16]}. Please confirm on "
                 "screen.",
             ),
-            warnings=invented_warnings([p.id]),
+            warnings=self.backend.invented_warnings([o.product_id]),
         )
 
     def create_basket_quote(self, buyer: Buyer, basket: Basket, as_of: str) -> Quote:
@@ -874,9 +882,10 @@ class StubState:
                     o = line.offer
                     if o is None:
                         continue
+                    info = self.backend.product(o.product_id)
                     unit_price = Decimal(o.unit_price_net)
-                    net = unit_price * o.qty
-                    rate = PRODUCTS[o.product_id].vat
+                    net = Decimal(o.total_net)
+                    rate = info.vat_rate if info else FOOD_VAT
                     vat = vat_of(net, rate)
                     lines.append(
                         QuoteLine(
@@ -894,12 +903,7 @@ class StubState:
                         )
                     )
                 issued = instant(as_of)
-                expires = min(
-                    [
-                        quote_expiry(issued, [(x.product_id, x.delivery_date) for x in lines]),
-                        *(instant(x.offer.order_by) for x in priced if x.offer),
-                    ]
-                )
+                expires = self._expiry(issued, lines, [x.offer.order_by for x in priced if x.offer])
                 q = Quote(
                     quote_id=quote_id,
                     status="ready_for_complete",
@@ -913,7 +917,7 @@ class StubState:
                     basket_version=basket.version,
                     issued_at=issued.isoformat(),
                     expires_at=expires.isoformat(),
-                    evidence=stub_evidence(lines),
+                    evidence=self.backend.quote_evidence(lines),
                 )
                 q = sign_quote(q)
                 self.quotes[quote_id] = q

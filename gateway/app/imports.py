@@ -27,9 +27,9 @@ from .basket import LOCKED, BasketService, LineDraft, summary, warnings_for
 from .contract import Confidence, ImportResponse, ImportRow, ImportRowStatus, LineSource, ListExtraction, Msg
 from .fmt import day_en, day_fi, ids_en, ids_fi, instant, to_helsinki
 from .identity import Buyer
-from .match import CatalogueEntry, catalogue_entries, close_names, match_item
+from .match import CatalogueEntry, close_names, match_item
 from .sheets import P_NO_ITEM, SheetRow
-from .stubs import PRODUCTS, StubState
+from .stubs import StubState
 
 ROW_STATUSES: list[ImportRowStatus] = list(get_args(ImportRowStatus))
 DATE_SEARCH_DAYS = 14  # how far ahead next_delivery_date looks for a pinned product
@@ -71,11 +71,11 @@ def next_delivery_date(
     first = to_helsinki(instant(as_of)).date() + timedelta(days=1)
     days = [first + timedelta(days=k) for k in range(DATE_SEARCH_DAYS)]
     allowed = [d for d in days if weekdays is None or d.weekday() in weekdays] or days
-    p = PRODUCTS.get(product_id) if product_id else None
+    p = stubs.backend.product(product_id) if product_id else None
     if p is None:
         return allowed[0]
     for d in allowed:
-        offer, why = stubs.price_product(p.id, 1.0, p.base_unit, d.isoformat(), as_of)
+        offer, why = stubs.price_product(p.product_id, 1.0, p.base_unit or "PCS", d.isoformat(), as_of)
         if offer is not None or (why is not None and not UNDELIVERABLE & set(why.flags)):
             return d
         if why is None:  # not priced at all: no date will do better
@@ -83,12 +83,12 @@ def next_delivery_date(
     return allowed[0]
 
 
-def _alternatives(name: str, product_id: str, entries: tuple[CatalogueEntry, ...]) -> list[str]:
+def _alternatives(stubs: StubState, name: str, product_id: str, entries: tuple[CatalogueEntry, ...]) -> list[str]:
     """A pinned line's other close names, so the buyer can swap the product: from the row's name, or from the
     product's own catalogue name when the row has none close (an exact id or GTIN)."""
     found = close_names(name, entries, exclude=product_id)
-    if not found and product_id in PRODUCTS:
-        found = close_names(PRODUCTS[product_id].name, entries, exclude=product_id)
+    if not found and (p := stubs.backend.product(product_id)) is not None:
+        found = close_names(p.name_fi, entries, exclude=product_id)
     return [c.product_id for c in found]
 
 
@@ -110,11 +110,11 @@ def _draft(
     weekdays: Collection[int] | None = None,
 ) -> tuple[LineDraft, list[Msg]]:
     """The row's draft and the notes for its message (the filled-in date, an amount out of range)."""
-    entries = catalogue_entries()
+    entries = stubs.backend.catalogue_entries()  # the stub catalogue or the real one, read once by the backend
     m = match_item(row.product_id, row.gtin, row.name, entries=entries)
     product_id = m.candidates[0].product_id if m.kind in ("exact", "one") else None
     if product_id is not None:
-        candidates = _alternatives(row.name, product_id, entries)
+        candidates = _alternatives(stubs, row.name, product_id, entries)
     else:
         candidates = [c.product_id for c in m.candidates] if m.kind == "several" else []
     amount, notes = _amount(row)
@@ -223,7 +223,7 @@ def import_rows(
             counts=_counts([]),
             extraction=extraction,
             message_for_user=_join(LOCKED, summary(basket, ordered_note=False)),
-            warnings=warnings_for(basket),
+            warnings=warnings_for(service.backend, basket),
         )
 
     # A line id in `existing` k times was returned for k duplicate rows; one more occurrence is the row that made it.
@@ -268,5 +268,5 @@ def import_rows(
         counts=counts,
         extraction=extraction,
         message_for_user=_join(head, s),
-        warnings=warnings_for(basket),
+        warnings=warnings_for(service.backend, basket),
     )

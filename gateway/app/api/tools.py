@@ -34,11 +34,10 @@ from ..contract import (
 from ..identity import Caller, CallerDep, SettingsDep, WebBuyerDep
 from ..orders import IdempotencyConflict
 from ..signing import sha256_hex
-from ..stubs import get_product, plan_quantity, search, substitutes
 from . import approvals as approval_routes
 from . import baskets as basket_routes
 from . import intake as intake_routes
-from .common import AGENT, StateDep, not_found, tool
+from .common import AGENT, BackendDep, StateDep, not_found, tool
 
 router = APIRouter(prefix="/v1")
 ProductIdPath = Annotated[
@@ -57,8 +56,8 @@ OrderIdPath = Annotated[str, Path(min_length=3, max_length=80, description="orde
         filters=["total_matches", "products"],
     ),
 )
-def search_products(body: SearchRequest, caller: CallerDep) -> SearchResponse:
-    return search(body)
+def search_products(body: SearchRequest, caller: CallerDep, backend: BackendDep) -> SearchResponse:
+    return backend.search(body)
 
 
 @router.get(
@@ -69,8 +68,8 @@ def search_products(body: SearchRequest, caller: CallerDep) -> SearchResponse:
         "Get one product's compact record: name, unit, content per unit, claims and allergens.", filters=["product"]
     ),
 )
-def get_product_route(product_id: ProductIdPath, caller: CallerDep) -> ProductResponse:
-    res = get_product(product_id)
+def get_product_route(product_id: ProductIdPath, caller: CallerDep, backend: BackendDep) -> ProductResponse:
+    res = backend.get_product(product_id)
     if res is None:
         raise not_found("product")
     return res
@@ -86,8 +85,8 @@ def get_product_route(product_id: ProductIdPath, caller: CallerDep) -> ProductRe
         filters=["product_id", "api_unit", "units_needed", "total_content", "overshoot"],
     ),
 )
-def plan_quantity_route(body: PlanQuantityRequest, caller: CallerDep) -> PlanQuantityResponse:
-    res = plan_quantity(body)
+def plan_quantity_route(body: PlanQuantityRequest, caller: CallerDep, backend: BackendDep) -> PlanQuantityResponse:
+    res = backend.plan_quantity(body)
     if res is None:
         raise not_found("product")
     return res
@@ -106,14 +105,14 @@ def plan_quantity_route(body: PlanQuantityRequest, caller: CallerDep) -> PlanQua
         tool_call_sound="typing",
     ),
 )
-def get_offers(body: OffersRequest, caller: CallerDep, stubs: StateDep, settings: SettingsDep) -> OffersResponse:
-    return stubs.get_offers(body, settings.as_of)
+def get_offers(body: OffersRequest, caller: CallerDep, backend: BackendDep, settings: SettingsDep) -> OffersResponse:
+    return backend.offers(body, settings.as_of)
 
 
 @router.get("/offers/{offer_set_id}", tags=["ui"])
-def get_offer_set(offer_set_id: str, caller: CallerDep, stubs: StateDep) -> OffersResponse:
+def get_offer_set(offer_set_id: str, caller: CallerDep, backend: BackendDep) -> OffersResponse:
     """The buyer UI renders option cards by id (client tools pass ids only)."""
-    res = stubs.get_offer_set(offer_set_id)
+    res = backend.offer_sets.get(offer_set_id)
     if res is None:
         raise not_found("offer set")
     return res
@@ -129,8 +128,10 @@ def get_offer_set(offer_set_id: str, caller: CallerDep, stubs: StateDep) -> Offe
         timeout=20,
     ),
 )
-def find_substitutes(body: SubstitutesRequest, caller: CallerDep) -> SubstitutesResponse:
-    return substitutes(body)
+def find_substitutes(
+    body: SubstitutesRequest, caller: CallerDep, backend: BackendDep, settings: SettingsDep
+) -> SubstitutesResponse:
+    return backend.substitutes(body, settings.as_of)
 
 
 @router.post(

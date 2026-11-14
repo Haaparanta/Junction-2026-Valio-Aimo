@@ -5,7 +5,7 @@
   to `canceled`. completed and canceled are final.
 * Policy: policy.evaluate under the caller's own mandate. allow -> completed; require_approval -> requires_escalation
   with an approval (decide_by = the earliest order-by time minus 1 hour); deny -> canceled.
-* Pre-order re-check (M8.3): price and availability are read again from the stubs just before an order is completed
+* Pre-order re-check (M8.3): price and availability are read again from the backend just before an order is completed
   or sent for approval, and again when it is approved. Any drift moves it to requires_escalation with price_changed;
   the quote is dropped, so create_quote or quote_basket makes a new one that needs a new confirmation.
 * Idempotency (M8.2): one order per quote version. A key (the Idempotency-Key header, or one derived from the voice
@@ -24,6 +24,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from .audit import log as audit_log
+from .backend import Backend
 from .contract import (
     Approval,
     ApprovalLine,
@@ -43,7 +44,7 @@ from .identity import Buyer
 from .mandates import for_buyer
 from .policy import Decision, LineFacts, OpenLine, PolicyContext, Reason, evaluate
 from .signing import TYP_RECEIPT, keys, sha256_hex
-from .stubs import PRODUCTS, StubState, assess, order_by, sha
+from .stubs import StubState, sha
 
 DECIDE_BUFFER = timedelta(hours=1)  # decide_by = the earliest order-by time minus this (G-07)
 SUBSTITUTE_SET = "OS-SUBST"  # the offer set find_substitutes makes its offers in
@@ -156,13 +157,13 @@ def line_facts(
     previous = previous_prices(state, buyer)
     facts = []
     for x in quote.lines:
-        p = PRODUCTS.get(x.product_id)
+        p = state.backend.product(x.product_id)
         offer = offers_by_line.get(x.line_id)
         set_id = offer.offer_id.rsplit(":", 1)[0] if offer else ""
         need = state.offer_request(set_id) if set_id else None
         if offer is not None:
             flags = tuple(offer.flags)
-        elif p is not None and p.sales_unit != p.api_unit:
+        elif p is not None and p.unit_mismatch:
             flags = ("UNIT_MISMATCH",)
         else:
             flags = ()
@@ -176,15 +177,14 @@ def line_facts(
                 line_net=Decimal(x.line_net),
                 delivery_date=date.fromisoformat(x.delivery_date),
                 category=p.category if p else "",
-                temperature=p.temperature if p else "unknown",
+                temperature=p.temperature_class if p else "unknown",
                 allergens=p.allergens if p else (),
-                allergen_data=p.allergen_data if p else "unknown",
+                allergen_data=p.allergen_data if p else "unknown",  # type: ignore[arg-type]
                 claims=p.claims if p else (),
                 flags=flags,
                 substituted=set_id == SUBSTITUTE_SET,
-                # X-17 NET_ABOVE_LIST: the stub rows carry no list price yet, so this stays None until M3 brings
-                # listPrice; policy.evaluate already applies the trigger when a list price is known.
-                list_price=getattr(p, "list_price", None),
+                # X-17 NET_ABOVE_LIST: the catalogue backend knows listPrice from the API; the stub rows carry none.
+                list_price=p.list_price if p else None,
                 previous_price=previous.get(x.product_id),
                 diet_known=need is not None,
                 must_claims=tuple(need.must_claims) if need else (),
@@ -225,36 +225,47 @@ def previous_prices(state: StubState, buyer: Buyer) -> dict[str, Decimal]:
 # ---- the pre-order re-check ----------------------------------------------------------------------
 
 
-def recheck(quote: Quote, now: datetime) -> list[Reason]:
-    """Price and availability read again from the stubs (M8.3). Empty when the quote still holds."""
+def recheck(backend: Backend, quote: Quote, now: datetime) -> list[Reason]:
+    """Price and availability read again from the backend (M8.3). Empty when the quote still holds."""
     drift = []
     for x in quote.lines:
-        p = PRODUCTS.get(x.product_id)
-        if p is None:
+        cur = backend.current(x.product_id, x.qty, x.delivery_date, now)
+        if cur is None:
             drift.append(Reason("NOT_DELIVERABLE", f"line {x.line_id} ({x.product_id}) is no longer sold", "poistunut"))
             continue
-        if p.price != Decimal(x.unit_price_net):
+        if cur.unit_price is None:
+            drift.append(
+                Reason("PRICE_CHANGED", f"line {x.line_id} ({x.product_id}) has no price now", f"rivi {x.line_id}")
+            )
+        elif Decimal(money(cur.unit_price)) != Decimal(x.unit_price_net):  # quoted to the cent
             drift.append(
                 Reason(
                     "PRICE_CHANGED",
-                    f"line {x.line_id} ({x.product_id}) EUR {x.unit_price_net} is now EUR {money(p.price)}",
-                    f"rivin {x.line_id} hinta {fi(x.unit_price_net)} € on nyt {fi(money(p.price))} €",
+                    f"line {x.line_id} ({x.product_id}) EUR {x.unit_price_net} is now EUR {money(cur.unit_price)}",
+                    f"rivin {x.line_id} hinta {fi(x.unit_price_net)} € on nyt {fi(money(cur.unit_price))} €",
                 )
             )
-        _, _, blocking = assess(p, p.content * x.qty, date.fromisoformat(x.delivery_date), now)
+        elif not cur.price_valid:
+            drift.append(
+                Reason(
+                    "PRICE_CHANGED",
+                    f"line {x.line_id} ({x.product_id}) price is not valid on {x.delivery_date}",
+                    f"rivin {x.line_id} hinta ei ole voimassa toimituspäivänä",
+                )
+            )
         drift += [
             Reason(flag, f"line {x.line_id} ({x.product_id}) for {x.delivery_date}", f"rivi {x.line_id}")
-            for flag in blocking
+            for flag in cur.blocking
         ]
     return drift
 
 
-def decide_by(quote: Quote) -> datetime:
+def decide_by(backend: Backend, quote: Quote, now: datetime) -> datetime:
     times = []
     for x in quote.lines:
-        p = PRODUCTS.get(x.product_id)
         d = date.fromisoformat(x.delivery_date)
-        times.append((order_by(p, d) if p else None) or helsinki_at(d - timedelta(days=1), "17:00"))
+        cur = backend.current(x.product_id, x.qty, x.delivery_date, now)
+        times.append((cur.order_by if cur else None) or helsinki_at(d - timedelta(days=1), "17:00"))
     return to_helsinki(min(times) - DECIDE_BUFFER)
 
 
@@ -455,7 +466,7 @@ def place_order(
                 reasons=decision.reason_strings,
                 canceled_at=now.isoformat(),
             )
-        elif drift := recheck(q, now):
+        elif drift := recheck(state.backend, q, now):
             meta.reasons = drift
             o = _escalate_drift(state, o, drift, quote_id)
         elif decision.outcome == "allow":
@@ -477,7 +488,7 @@ def place_order(
                 order_id=order_id,
                 quote_id=quote_id,
                 reasons=decision.reason_strings,
-                decide_by=decide_by(q).isoformat(),
+                decide_by=decide_by(state.backend, q, now).isoformat(),
                 approver_role="approver",
                 buyer_name=buyer.display_name,
                 org_id=buyer.org_id,
@@ -646,7 +657,7 @@ def decide(
             o = transition(o, "canceled", reason_code="approval_rejected", canceled_at=now.isoformat())
         else:
             current = state.quotes.get(a.quote_id)
-            drift = recheck(meta.quote, now)
+            drift = recheck(state.backend, meta.quote, now)
             if current is None or quote_sha(current) != a.quote_sha256:  # any change to the quote voids it (M9.1)
                 drift = [Reason("QUOTE_CHANGED", f"quote {a.quote_id} changed after the approval request", ""), *drift]
             if drift:

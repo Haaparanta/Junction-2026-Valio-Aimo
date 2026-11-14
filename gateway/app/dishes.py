@@ -124,13 +124,13 @@ def drafts_for(plan: DishBreakdown, need_date: str) -> tuple[list[LineDraft], li
     return drafts, warnings
 
 
-def _locked(basket: Basket) -> DishResponse:
+def _locked(baskets: BasketService, basket: Basket) -> DishResponse:
     return DishResponse(
         reason_code="basket_locked",
         basket_id=basket.basket_id,
         basket=basket,
         message_for_user=_join(LOCKED, summary(basket, ordered_note=False)),
-        warnings=warnings_for(basket),
+        warnings=warnings_for(baskets.backend, basket),
     )
 
 
@@ -140,14 +140,14 @@ def _nothing(
     """No dish: the basket as it is ('new' starts one, so the answer always names a basket), and why."""
     added = baskets.add_lines(buyer, target, [], conversation_id)
     if added.locked:
-        return _locked(added.basket)
+        return _locked(baskets, added.basket)
     return DishResponse(
         reason_code="not_found",
         basket_id=added.basket.basket_id,
         basket=added.basket,
         dish=None,
         message_for_user=_join(head, *warnings),
-        warnings=[w.en for w in warnings] + warnings_for(added.basket),
+        warnings=[w.en for w in warnings] + warnings_for(baskets.backend, added.basket),
     )
 
 
@@ -165,7 +165,7 @@ def plan_dish(
     if target.lower() != "new":
         basket = baskets.get(buyer, target)
         if basket.status == "ordered":
-            return _locked(basket)  # before the Claude call: nothing could be added anyway
+            return _locked(baskets, basket)  # before the Claude call: nothing could be added anyway
     inp = DishInput(**req.model_dump(include=set(DishInput.model_fields)))
     try:
         plan = finalize_breakdown(inp, llm.breakdown(inp))
@@ -205,7 +205,7 @@ def plan_dish(
     added = baskets.add_lines(buyer, target, drafts, conversation_id, record=record)
     basket = added.basket
     if added.locked:
-        return _locked(basket)
+        return _locked(baskets, basket)
     dish = made[0]
     n, ids = len(dish.line_ids), dish.line_ids
     head = Msg(
@@ -224,7 +224,7 @@ def plan_dish(
         basket=basket,
         dish=dish,
         message_for_user=_join(head, check, summary(basket)),
-        warnings=[w.en for w in warnings] + warnings_for(basket),
+        warnings=[w.en for w in warnings] + warnings_for(baskets.backend, basket),
     )
 
 

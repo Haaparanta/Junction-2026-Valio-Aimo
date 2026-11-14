@@ -119,6 +119,10 @@ class Tools:
         return self.app.state.stubs
 
     @property
+    def backend(self) -> Any:
+        return self.app.state.backend
+
+    @property
     def baskets(self) -> Any:
         return basket_service(self.app, self.settings)
 
@@ -133,7 +137,7 @@ class Tools:
                 "Find catalogue products for a need. Fill heads with the product type in Finnish base form and "
                 "exclude with words to drop; put diet needs in must_claims and must_not_allergens. The gateway "
                 "applies the diet filters.",
-                lambda c, a: rest.search_products(a, c),
+                lambda c, a: rest.search_products(a, c, s.backend),
             ),
             (
                 "get_product",
@@ -142,7 +146,7 @@ class Tools:
                 READ,
                 "Get one product's compact record: name, unit, content per unit, claims and allergens, plus "
                 "schema.org JSON-LD.",
-                lambda c, a: rest.get_product_route(a.product_id, c),
+                lambda c, a: rest.get_product_route(a.product_id, c, s.backend),
             ),
             (
                 "plan_quantity",
@@ -151,7 +155,7 @@ class Tools:
                 READ,
                 "Turn a need in litres, kilograms or pieces into order units for one product, with lot-size "
                 "rounding and overshoot. Never do this arithmetic yourself.",
-                lambda c, a: rest.plan_quantity_route(a, c),
+                lambda c, a: rest.plan_quantity_route(a, c, s.backend),
             ),
             (
                 "get_offers",
@@ -160,7 +164,7 @@ class Tools:
                 READ,
                 "Get feasible, ranked good-better-best options for a need (what, how much, by when), with flags "
                 "and explanations. Never state a price that is not in this result.",
-                lambda c, a: rest.get_offers(a, c, s.stubs, s.settings),
+                lambda c, a: rest.get_offers(a, c, s.backend, s.settings),
             ),
             (
                 "add_to_basket",

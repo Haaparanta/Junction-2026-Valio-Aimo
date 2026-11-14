@@ -1,8 +1,8 @@
 """One matcher for imported rows (docs/basket-plan.md B-07): a product id, a GTIN or a name to catalogue products.
 
-Sheet imports (M25) and photo imports (M28) use it; voice and dish lines go through stubs.offers() with heads and
-exclusions instead. Real search (PLAN M4) replaces the insides of catalogue_entries() and match_item() and keeps
-their signatures. Names and cell values are data: they are compared, never followed, and never copied into notes
+Sheet imports (M25) and photo imports (M28) use it, with the entries of the app's backend (app/backend.py: the stub
+catalogue, or every product of catalog.db, read once); voice and dish lines go through the backend's offers with heads
+and exclusions instead. Names and cell values are data: they are compared, never followed, and never copied into notes
 (only a well-formed six-digit id or a digits-only GTIN is).
 
 How a name is matched:
@@ -104,7 +104,8 @@ _LIST_COMMA = re.compile(r"(?<!\d),|,(?!\d)")  # 'voi, suolaton', but not the de
 
 
 def catalogue_entries() -> tuple[CatalogueEntry, ...]:
-    """The stub catalogue as match entries. stubs is imported here so that it may import this module one day."""
+    """The stub catalogue as match entries (StubBackend's; CatalogBackend reads catalog.db). stubs is imported here so
+    that it may import this module one day."""
     from . import stubs
 
     return tuple(
@@ -256,6 +257,7 @@ def _score(words: tuple[str, ...], head: str, name: str) -> tuple[float, bool]:
     return WORD_WEIGHT * sum(found) / len(found) + bonus, head_whole and all(f > 0 for f in found)
 
 
+@lru_cache(maxsize=1 << 18)  # pure; a query word meets the same catalogue words thousands of times
 def _word_score(word: str, name_word: str) -> float:
     if word == name_word:
         return 100.0
@@ -268,6 +270,7 @@ def _word_score(word: str, name_word: str) -> float:
     return max(PART_CREDIT if inside else 0.0, ratio if ratio >= FUZZY_FOUND else 0.0)
 
 
+@lru_cache(maxsize=1 << 18)
 def _ends_with(name_word: str, head: str) -> bool:
     """name_word is a compound whose last part is head, allowing an ending on either: 'vispikerma' and 'kerma'."""
     return any(
@@ -299,7 +302,9 @@ def _same_name(name: str, words: tuple[str, ...], packs: tuple[str, ...]) -> boo
     return other_packs == packs and sorted(other_words) == sorted(words)
 
 
-@lru_cache(maxsize=8192)
+# Both caches hold the whole real catalogue (17,546 names, about 40,000 distinct words; app/backend.py), so a
+# sheet import scores every name without normalising it again.
+@lru_cache(maxsize=1 << 17)
 def _forms(word: str) -> frozenset[str]:
     """The word and the base forms it may be inflected from: 'kananmunat' -> {'kananmunat', 'kananmuna'}."""
     if not _has_letter(word):
@@ -307,7 +312,7 @@ def _forms(word: str) -> frozenset[str]:
     return frozenset({word, *(word[: -len(e)] for e in _ENDINGS if word.endswith(e) and len(word) - len(e) >= 3)})
 
 
-@lru_cache(maxsize=8192)
+@lru_cache(maxsize=1 << 15)
 def _normalise(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """(words, pack sizes) of a name: 'Valio Eila voi 4x5 kg' -> (('valio', 'eila', 'voi'), ('4x5kg',))."""
     text = unicodedata.normalize("NFKC", text).casefold()

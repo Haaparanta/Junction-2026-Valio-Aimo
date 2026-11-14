@@ -1,9 +1,9 @@
 """The policy engine (PLAN M7.2, findings R-07, G-07): allow, require_approval or deny, decided in code.
 
 evaluate(mandate, quote, context) is pure: everything it needs about the products, the buyer's other open orders and
-the diet need comes in `context`, which orders.py builds from the stubs. Each reason is a 'CODE: detail' string in the
-approval request and the audit log, and the whole decision maps to one reason_code for the tool answer (PLAN §5:
-OVER_ORDER_CAP -> limit_exceeded).
+the diet need comes in `context`, which orders.py builds from the backend (app/backend.py). Each reason is a
+'CODE: detail' string in the approval request and the audit log, and the whole decision maps to one reason_code for
+the tool answer (PLAN §5: OVER_ORDER_CAP -> limit_exceeded).
 
 Triggers, in the order their reasons are listed:
 * deny: no mandate for the caller, a mandate whose org admin signature does not verify (M7.3), a mandate without
