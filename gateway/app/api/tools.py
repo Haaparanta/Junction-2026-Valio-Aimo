@@ -34,6 +34,7 @@ from ..contract import (
 from ..identity import CallerDep, SettingsDep, WebBuyerDep
 from ..orders import IdempotencyConflict
 from ..stubs import get_product, plan_quantity, search, substitutes
+from . import approvals as approval_routes
 from . import baskets as basket_routes
 from . import intake as intake_routes
 from .common import AGENT, StateDep, not_found, tool
@@ -295,5 +296,7 @@ def get_approval(
 # /v1/baskets/template.xlsx and the dish-job paths are never taken for /v1/baskets/{basket_id}.
 router.include_router(intake_routes.router)
 router.include_router(basket_routes.router)
+# /v1/approvals (list) and /v1/approvals/{approval_id}/decision: the approver console, under its cookie only (M9).
+router.include_router(approval_routes.router)
 
 __all__ = ["router", "Msg"]
