@@ -6,9 +6,10 @@ Rules that keep the schemas usable as ElevenLabs webhook tool schemas (scripts i
 * every response carries status, reason_code, message_for_user {fi, en} and warnings[].
 """
 
-from typing import Literal
+from datetime import date
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 # UCP checkout statuses for quotes, orders and approvals; the other tools answer "ok".
 TradeStatus = Literal["incomplete", "ready_for_complete", "requires_escalation", "completed", "canceled"]
@@ -59,6 +60,16 @@ class Envelope(BaseModel):
 
 
 ID_FIELD = Field(pattern=r"^\d{6}$", description="Six-digit Valio Aimo product id exactly as a tool returned it.")
+
+
+def _real_date(v: str) -> str:
+    """The pattern checks the shape; this rejects dates that do not exist, such as 2026-02-30 (HTTP 422)."""
+    if v:
+        date.fromisoformat(v)
+    return v
+
+
+IsoDate = Annotated[str, AfterValidator(_real_date)]  # the JSON schema stays a plain string with a pattern
 
 
 class _Request(BaseModel):
@@ -147,7 +158,7 @@ class PlanQuantityResponse(Envelope):
 class OffersRequest(SearchRequest):
     amount: float = Field(gt=0, le=1_000_000, description="How much the buyer needs, as a number.")
     unit: Literal["L", "KG", "PCS"] = Field(description="Unit of the amount: litres, kilograms or pieces.")
-    need_date: str = Field(
+    need_date: IsoDate = Field(
         pattern=r"^\d{4}-\d{2}-\d{2}$", description="Delivery date the buyer needs, YYYY-MM-DD (Europe/Helsinki)."
     )
     preference: Literal["cheapest", "greenest", "most_reliable"] = Field(
@@ -198,7 +209,7 @@ class SubstitutesRequest(_Request):
     product_id: ProductId = ID_FIELD
     amount: float = Field(gt=0, le=1_000_000, description="How much the buyer needs, as a number.")
     unit: Literal["L", "KG", "PCS"] = Field(description="Unit of the amount: litres, kilograms or pieces.")
-    need_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$", description="Delivery date needed, YYYY-MM-DD.")
+    need_date: IsoDate = Field(pattern=r"^\d{4}-\d{2}-\d{2}$", description="Delivery date needed, YYYY-MM-DD.")
 
 
 class Substitute(BaseModel):
@@ -360,7 +371,7 @@ class BasketLinePatch(_Request):
     unit: Literal["", "L", "KG", "PCS"] = Field(
         default="", description="New unit of the amount: L, KG or PCS. Empty keeps the unit."
     )
-    need_date: str = Field(
+    need_date: IsoDate = Field(
         default="",
         pattern=r"^(\d{4}-\d{2}-\d{2})?$",
         description="New delivery date, YYYY-MM-DD (Europe/Helsinki). Empty keeps the date.",
