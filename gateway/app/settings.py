@@ -3,7 +3,7 @@
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     web_session_ttl_s: int = 12 * 3600
     # Demo as-of clock (PLAN M3.3): every Monday cut-off has passed after Sun 15.11 17:00.
     as_of: str = "2026-11-14T10:00:00+02:00"
+
+    # Catalogue and Valio Aimo answers (PLAN M2, M3; app/backend.py). VALIO_MODE: auto (the real catalogue with the
+    # recorded answers when catalog.db and fixtures/manifest.json both exist, else the stub catalogue), stub, replay
+    # (catalog.db + data/fixtures) or live (catalog.db + the API, VALIO_AIMO_API_KEY).
+    valio_mode: Literal["auto", "stub", "replay", "live"] = "auto"
+    catalog_db: Path = Field(default=REPO_ROOT / "data" / "catalog.db")  # scripts/build_catalog.py
+    fixtures_dir: Path = Field(default=REPO_ROOT / "data" / "fixtures")  # scripts/record_fixtures.py
+    valio_aimo_api_key: str | None = Field(default=None, repr=False)  # live mode only; never logged
+    valio_aimo_api_base_url: str = "https://junction26.valioaimo.fi/api"
     cookie_secure: bool = False  # True behind HTTPS in production
     web_dist: Path | None = Field(default=REPO_ROOT / "web" / "dist")  # built UI served at / when present
 
@@ -59,6 +68,19 @@ class Settings(BaseSettings):
     mcp_allowed_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
     )
+
+    @field_validator("valio_mode", mode="before")
+    @classmethod
+    def _mode(cls, v: Any) -> Any:
+        """Case and spaces do not matter; an empty value (as copied from .env.example) means auto."""
+        return (v.strip().lower() or "auto") if isinstance(v, str) else v
+
+    @field_validator("catalog_db", "fixtures_dir", mode="before")
+    @classmethod
+    def _path_or_default(cls, v: Any, info: Any) -> Any:
+        if isinstance(v, str) and not v.strip():
+            return cls.model_fields[info.field_name].get_default()
+        return v
 
     @field_validator("mcp_agent_keys", "mcp_allowed_hosts", "mcp_allowed_origins", mode="before")
     @classmethod

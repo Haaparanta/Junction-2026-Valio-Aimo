@@ -1518,6 +1518,62 @@ def get_offers_blocking(req: OffersRequest, **kwargs: Any) -> OfferSet:
     return asyncio.run(get_offers(req, **kwargs))
 
 
+def build_product_offer(
+    product_id: str,
+    record: dict[str, Any],
+    amount: float,
+    unit: str,
+    need_date: str,
+    availability: ApiResult,
+    price: ApiResult,
+    *,
+    as_of: str | datetime | Clock,
+    conn: sqlite3.Connection | None = None,
+    buffer: timedelta = DEFAULT_BUFFER,
+    heads: Sequence[str] = (),
+) -> OfferSet:
+    """The one-product offer set behind price_product, over answers the caller already has (no I/O except the
+    category reliability lookup on `conn`). The buyer chose this product, so a variant is not held back (`heads`,
+    the need's product types, only mark it VARIANT) and no split is proposed."""
+    req = OffersRequest(
+        query=record.get("name_fi") or product_id,
+        amount=amount,
+        unit=unit,  # type: ignore[arg-type]
+        need_date=need_date,
+        allow_variants=True,
+    )
+    found = SearchResult(
+        hits=[Hit(product_id=product_id, record=record)],
+        total_matches=1,
+        mode="heads",
+        interpretation={"heads": list(heads)},
+    )
+    offer_set_id = (
+        "OP-" + hashlib.sha256(f"{product_id}|{_norm(_q(amount))}|{unit}|{need_date}".encode()).hexdigest()[:8].upper()
+    )
+    return build_offer_set(
+        req,
+        found,
+        availability,
+        price,
+        as_of=as_of,
+        conn=conn,
+        buffer=buffer,
+        allow_split=False,
+        offer_set_id=offer_set_id,
+    )
+
+
+def product_offer(res: OfferSet) -> tuple[Offer | None, NotOffered | None]:
+    """price_product's answer from build_product_offer's offer set."""
+    opt = res.options[0] if res.options else None
+    if opt is None or opt.gate == "not_comparable":
+        return None, None
+    if res.response.options:
+        return res.response.options[0], None
+    return None, res.response.not_offered[0] if res.response.not_offered else None
+
+
 async def price_product(
     product_id: str,
     amount: float,
@@ -1537,41 +1593,13 @@ async def price_product(
     record = get_record(conn, product_id)
     if record is None:
         return None, None
-    req = OffersRequest(
-        query=record.get("name_fi") or product_id,
-        amount=amount,
-        unit=unit,  # type: ignore[arg-type]
-        need_date=need_date,
-        allow_variants=True,
-    )
-    found = SearchResult(
-        hits=[Hit(product_id=product_id, record=record)],
-        total_matches=1,
-        mode="heads",
-        interpretation={"heads": list(heads)},
-    )
     availability = await client.availability([product_id], need_date)
     price = await client.price([product_id], need_date)
-    offer_set_id = (
-        "OP-" + hashlib.sha256(f"{product_id}|{_norm(_q(amount))}|{unit}|{need_date}".encode()).hexdigest()[:8].upper()
-    )
-    res = build_offer_set(
-        req,
-        found,
-        availability,
-        price,
-        as_of=as_of,
-        conn=conn,
-        buffer=buffer,
-        allow_split=False,
-        offer_set_id=offer_set_id,
-    )
-    opt = res.options[0] if res.options else None
-    if opt is None or opt.gate == "not_comparable":
-        return None, None
-    if res.response.options:
-        return res.response.options[0], None
-    return None, res.response.not_offered[0] if res.response.not_offered else None
+    res = build_product_offer(
+        product_id, record, amount, unit, need_date, availability, price, as_of=as_of, conn=conn, buffer=buffer,
+        heads=heads,
+    )  # fmt: skip
+    return product_offer(res)
 
 
 __all__ = [
@@ -1583,6 +1611,7 @@ __all__ = [
     "SplitPlan",
     "Weights",
     "build_offer_set",
+    "build_product_offer",
     "catalog_units",
     "consent_heads",
     "estimate_reliability",
@@ -1591,6 +1620,7 @@ __all__ = [
     "get_offers_blocking",
     "is_variant",
     "price_product",
+    "product_offer",
     "refusal_reason",
     "shortlist",
 ]
