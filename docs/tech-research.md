@@ -86,12 +86,12 @@ One private agent runs each call: ElevenLabs hosts STT, a Claude model selected 
 - **Finnish.** `agent.language` plus `language_presets`: the dashboard translates preset first messages, CLI and API examples write them by hand *(corrected)*; the language is fixed per call unless `language_detection` is attached [language][lang]. Finnish TTS: `eleven_v4_turbo` (API default since 2026-10-05, about 100 ms, expressive tags), `eleven_v4`, `eleven_v3_conversational` (about 165 ms), `eleven_multilingual_v2`, `eleven_flash_v2_5` (about 100 ms, the only one with speed control). `eleven_flash_v2` is English only, yet the language page still calls it the default [create][create] [models][models] [latency][latency]. Flash v2.5 does not normalise numbers or currency; `text_normalisation_type: elevenlabs` does.
 - **Voices.** Default voices expire 2026-12-31 and are unavailable to accounts created after March 2026 [default voices][defvoices]. Voice Design returns 3 previews (`eleven_ttv_v3`, `seed`); saving uses a voice slot; start the prompt with "Native Finnish (Finland)"; it is "still experimental" and "may be less performative" on v4 [Voice Design][vd].
 - **Webhook tools.** Each parameter has one source (LLM, dynamic variable, system value, constant, omitted); `allowed_values` rejects LLM values outside a gateway-supplied list [tools API][toolapi]. Headers come from workspace secrets, dynamic or environment variables; there is no OpenAPI import [webhook tools][webhook]. Timeouts: webhook 5–300 s (default 20), client 1–120 s (20) or −1, MCP 5–300 s (30); error mode `auto` hides errors for our tools [OpenAPI][oa]. Redirects are followed only as a header-less GET. Editing a tool changes every agent and branch at once [editing][editing].
-- **Identity.** `secret__` variables reach headers only, never the LLM; the API shows them `<REDACTED>`, but post-call webhooks deliver them in clear. `system__user_id` "must not be trusted for authentication" [dynamic variables][dv]. Initiation webhooks skip SDK sessions [personalization][pers]. Tool calls are unsigned; egress IPs are static (US 34.67.146.145, 34.59.11.47; EU 35.204.38.71, 34.147.113.54) [IPs][ip].
-- **Private agent.** `enable_auth` plus a WebRTC conversation token (`GET /v1/convai/conversation/token` → `{token, conversation_id}`) or a WebSocket signed URL (start within 15 min, no conversation id) [auth][auth] [token][token]. Origin allowlists must not be combined with tokens and `require_origin_header` needs one, so the token is the only gate *(corrected)*. Overrides are off per field; disabled ones error except ASR keywords [overrides][overrides]. Environment variables resolve per the token's `environment`; the Python SDK has them at `client.environment_variables` [env vars][envvars].
+- **Identity.** `secret__` variables reach headers only, never the LLM; the API shows them `<REDACTED>`, but post-call webhooks deliver them in clear. `system__user_id` "must not be trusted for authentication" [dynamic variables][dv]. Initiation webhooks skip SDK sessions [personalization][pers]. Tool calls are unsigned; egress IPs are static (US 34.67.146.145, 34.59.11.47; EU 35.204.38.71, 34.147.113.54; Asia 35.185.187.110, 35.247.157.189; an allowlist needs all six) [IPs][ip].
+- **Private agent.** `enable_auth` plus a WebRTC conversation token (`GET /v1/convai/conversation/token` → `{token, conversation_id}`) or a WebSocket signed URL (start within 15 min, no conversation id) [auth][auth] [token][token]. Origin allowlists must not be combined with tokens and `require_origin_header` needs one, so the token is the only gate *(corrected)*; keep `auth.shareable_token` unset, because it also starts conversations. Overrides are off per field; disabled ones error except ASR keywords [overrides][overrides]. Environment variables resolve per the token's `environment`; the Python SDK has them at `client.environment_variables` [env vars][envvars].
 - **MCP on ElevenLabs.** SSE (default) or streamable HTTP; off per workspace until `can_use_mcp_servers`; unavailable under Zero Retention Mode; approvals happen in the browser; a docstring change sets `needs_review`; the guide's `always_ask` is not a valid value. The CLI cannot sync MCP servers, but its raw `elevenlabs <resource> <method>` commands can create them *(corrected)* [MCP][elmcp] [CLI][cli].
 - **Events and audit.** Client events must be enabled; a hand-written list replaces the defaults [client events][events]. Post-call webhooks carry transcript, tool calls, analysis and variables, signed `ElevenLabs-Signature: t=…,v0=…` (HMAC-SHA256 over `t.body`, 30-minute tolerance); retries resend the same payload; a per-agent override needs an HMAC workspace webhook created by an admin [post-call][postcall] [SDK][pypiel].
 - **Config and tests.** CLI 1.11.0 keeps agents, tools and tests as raw API JSON, YAML or TOML; all agents are versioned with branches [CLI][cli] [versioning][versioning]. Tests (simulations with mocked tools, next reply, tool call) run with `repeat_count` 2–20 and `branch_id`, and must be attached before `elevenlabs agents test` runs them [testing][testing]. Text-only mode needs no microphone and is billed per message [chat mode][chat].
-- **Plans** [pricing][pricing] [chat mode][chat]: Free 15 min / 4 calls; Starter $6 ($1 first month) 75 / 6; Creator $22 ($11) 275 / 10; Pro $99 1,238 / 20; Scale $299 3,738 / 30; Business $990 12,375 min with 40 calls on the pricing page but 30 in the chat-mode guide. Chat concurrency is 25× voice. Extra minutes $0.08, burst $0.16; LLM on top; connection time is billed, idle tabs included. Bursting is on (3× concurrency, max 300, double rate) and new agents queue excess callers for up to 180 s instead of rejecting them *(corrected)* [burst][burst] [queueing][queue]. Free accounts get blocked on shared IPs [abuse][abuse]; EU residency is Enterprise only [residency][residency].
+- **Plans** [pricing][pricing] [chat mode][chat]: Free 15 min / 4 calls; Starter $6 ($1 first month) 75 / 6; Creator $22 ($11) 275 / 10; Pro $99 1,238 / 20; Scale $299 3,738 / 30; Business $990 12,375 min with 40 calls on the pricing page but 30 in the chat-mode guide. Chat concurrency is 25× voice. Extra minutes $0.08, burst $0.16; minutes beyond the plan come only from prepaid Pay As You Go credits (usage-based billing is legacy-only), so buy some before judging; LLM on top; connection time is billed, idle tabs included. Bursting is on (3× concurrency, max 300, double rate) and new agents queue excess callers for up to 180 s instead of rejecting them *(corrected)* [burst][burst] [queueing][queue]. Free accounts get blocked on shared IPs [abuse][abuse]; EU residency is Enterprise only [residency][residency].
 
 ### Gotchas and risks
 
@@ -117,7 +117,9 @@ One private agent runs each call: ElevenLabs hosts STT, a Claude model selected 
       "language": "en",
       "first_message": "Hi, I'm Valio Aimo's AI ordering assistant. This call is recorded and processed by our service providers. How can I help?",
       "prompt": {"llm": "<a Claude model id from GET /v1/convai/llm/list>", "reasoning_effort": "none",
-                 "timezone": "Europe/Helsinki", "backup_llm_config": {"preference": "override", "order": ["<second model>"]}}
+                 "timezone": "Europe/Helsinki", "backup_llm_config": {"preference": "override", "order": ["<second model>"]},
+                 "built_in_tools": {"language_detection": {"name": "language_detection", "params": {"system_tool_type": "language_detection"}},
+                                    "end_call": {"name": "end_call", "params": {"system_tool_type": "end_call"}}}}
     },
     "language_presets": {"fi": {"overrides": {"agent": {"first_message": "Hei, olen Valio Aimon tekoälyavustaja. Puhelu tallennetaan, ja sitä käsittelevät palveluntarjoajamme. Miten voin auttaa?"}}}},
     "tts": {"model_id": "eleven_v4_turbo", "voice_id": "<designed Finnish-capable voice>"},
@@ -125,7 +127,8 @@ One private agent runs each call: ElevenLabs hosts STT, a Claude model selected 
              "soft_timeout_config": {"timeout_seconds": 3.0, "message": "Hetkinen...", "use_llm_generated_message": false}},
     "conversation": {"max_duration_seconds": 900, "client_events": ["conversation_initiation_metadata", "ping", "audio",
       "interruption", "user_transcript", "agent_response", "agent_response_correction", "agent_chat_response_part",
-      "client_tool_call", "agent_tool_request", "agent_tool_response", "agent_tool_response_full_payload", "vad_score"]}
+      "client_tool_call", "agent_tool_request", "agent_tool_response", "agent_tool_response_full_payload", "vad_score",
+      "agent_response_complete", "guardrail_triggered"]}
   },
   "platform_settings": {
     "auth": {"enable_auth": true},
@@ -230,25 +233,25 @@ One `<ConversationProvider>` wraps the voice UI. Its callbacks feed a small exte
 ### Key facts
 
 - **v1 API.** Since March 2026 every hook needs a `ConversationProvider`; use the granular hooks (`useConversationControls` has stable functions and never re-renders) and `useConversationClientTool`; `useConversation` re-renders on every change [v1 changelog][cl0323] [React docs][react].
-- **Surprises in 1.22.1.** `startSession()` returns `void` although the docs `await` an id: read the id in `onConnect` and failures in `onError`. `useConversation().message` is the error string. Controls throw "No active conversation" until connected and getters return an empty array or 0; `setVolume` throws in text sessions; `startSession` silently does nothing while a start is pending and throws if a hook and the provider register the same tool [controls][ctrl] [provider][prov].
+- **Surprises in 1.22.1.** `startSession()` returns `void` although the docs `await` an id: read the id in `onConnect` and failures in `onError`. `useConversation().message` is the error string. Controls throw "No active conversation" until connected and getters return an empty array or 0; `setVolume` throws in text sessions; `startSession` silently does nothing while a session is open or a start is pending and throws if a hook and the provider register the same tool [controls][ctrl] [provider][prov].
 - **Session.** A token means WebRTC, a signed URL WebSocket; `dynamicVariables` take scalars only. Provider, hook and `startSession` callbacks all run, composed at `startSession`, so hooks that add callbacks must be mounted before the call. `onDisconnect` reports `error` (with `closeCode`), `agent` (for example `end_call`) or `user` [types][types].
 - **Mode** is only `speaking` or `listening`. Agent audio switches to speaking at once (on WebSocket before it is audible) and an interruption to listening; WebSocket then follows playback, WebRTC follows LiveKit active-speaker changes *(corrected)* [VoiceConversation][voiceconv].
 - **Audio signals.** `getOutputByteFrequencyData()` gives 1024 bytes over 100–8000 Hz (bin i ≈ 100 + 7.7·i Hz; fftSize 2048, smoothing 0.8); `getOutputVolume()` is 0–1 (−100 to −30 dB) [volume][vol]. Alignment comes per audio chunk as characters with start times and durations, with no phonemes [client events][events]. `onAudioAlignment` fires on arrival; client 1.15.2+ forwards it on WebRTC, but the events page says WebRTC sends no audio events and nothing documents the timing, so measure first; `onAudioAlignmentPlayback` is WebSocket only *(corrected)* [changelog][cl0727].
-- **Captions.** `agent_response` arrives after the audio starts, so build live captions from `agent_chat_response_part` (enable it), keyed by `response_id`; `agent_response_correction` trims text after a barge-in, also by `response_id`. `stripAudioTags` cleans `onMessage` only and skips tags with punctuation such as `[half-laughing]` [changelog][cl1026]. Add typed user messages locally; they may not echo back.
+- **Captions.** `agent_response` arrives after the audio starts, so build live captions from `agent_chat_response_part` (enable it), keyed by `response_id`; `agent_response_correction` trims text after a barge-in, also by `response_id`. `stripAudioTags` cleans `onMessage` and `onAgentResponseCorrection` but not the streamed parts, and skips tags with punctuation such as `[half-laughing]` [changelog][cl1026]: strip live captions at render time with a pattern that also removes punctuated tags. Add typed user messages locally; they may not echo back.
 - **Client tools.** The return value goes to the agent; a throw is sent as `is_error` and also fires `onError`; an unregistered name returns an error. The SDK's typed `useConversationClientTool<Tools>` example fails TypeScript strict (TS2344): use untyped handlers with runtime checks (local check). React handles MCP approvals with `onMCPToolCall` and `sendMCPToolApprovalResult` [React types][rtypes].
 - **Microphone and typing.** Voice always calls `getUserMedia` (echo cancellation, noise suppression, auto gain) and needs HTTPS or localhost. Errors: `NotAllowedError` (Firefox also for insecure contexts), `NotFoundError`, `NotReadableError`. `permissions.query` for the microphone works in Chromium, Safari 16+ (may report `prompt` for a denied site) and Firefox 132+ *(corrected)* [MDN][mdngum] [Mozilla][moz]. `sendUserMessage(text)` is a user turn, `sendContextualUpdate` silent context, `sendUserActivity` a ~2 s pause [client-to-server][c2s]. Chat sessions count against total concurrency at handshake, so the text fallback can be refused when voice is full [chat mode][chat].
 - **Browsers.** A strict CSP needs `workletPaths` of the same version and `libsampleratePath` (or `cdn.jsdelivr.net`) [client README][creadme]. On iOS the WebRTC analyser context is created without `resume()`: check that the mouth moves on an iPhone [audioUnlock][unlock].
 - **Driver recipe** (from the research sketch, which type-checks): bands 150–900, 900–2500 and 2500–8000 Hz weighted 0.6/0.3/0.1; auto-gain from a decaying peak; 40 ms attack and 90 ms release; mouth shape (M, A, E, O, F) from band ratios with 3-frame hysteresis; blink 120 ms every 2–5 s. Write `--mouth-open` and `data-mouth` on the SVG root; check `matchMedia('(prefers-reduced-motion: reduce)')` in the loop, because CSS media queries do not stop rAF.
 - **Alternatives.** LiveAvatar (HeyGen) renders a photoreal avatar but bypasses our client tools [LiveAvatar][liveavatar]; the experimental avatar-video hooks are undocumented. Art: DiceBear Open Peeps CC0 faces give mouth frames [open-peeps][peeps]; Rive has a free-plan splash, deprecated Inputs, 2.2 MB of WASM and unmergeable files [Rive][rive]; the ElevenLabs UI Orb is a plan B [ElevenLabs UI][elui].
 
-**Avatar states:** idle (not live) · connecting (after `startSession`, before `onConnect`) · listening · userSpeaking (`vad_score` > 0.5) · thinking (a gateway tool in flight, matched by `tool_name`, or more than 1 s after the user's turn without agent audio; 15 s watchdog; `agent_response_complete` via `onIncomingEvent` ends a turn) · speaking (`mode` or output energy) · error (`onDisconnect` with reason `error`).
+**Avatar states:** idle (not live) · connecting (after `startSession`, before `onConnect`) · listening · userSpeaking (`vad_score` > 0.5) · thinking (a gateway tool in flight, matched by `tool_name`, or more than 1 s after the user's turn without agent audio; 15 s watchdog; `agent_response_complete` (enable it in `client_events`) via `onIncomingEvent` ends a turn) · speaking (`mode` or output energy) · error (`onDisconnect` with reason `error`, or `onError` before `onConnect`, which also ends connecting: a failed start fires no `onDisconnect`).
 
 ### Gotchas and risks
 
 - Any `onError` (thrown tool, unknown tool, non-fatal server error) sets `useConversationStatus()` to `'error'` while the call stays open, and a mid-call drop ends as `'disconnected'`. Derive "live" from `onConnect`/`onDisconnect`, toast errors, return error strings from tools (runtime-tested).
 - A blocking tool's promise must settle on replacement, disconnect and unmount, or the agent waits (forever with −1).
-- Call queueing is on by default: a queued session is "connected" and its hold audio arrives as agent audio, so the avatar mouths it; `queue_status` reaches only `onIncomingEvent`; a timeout closes with code 4300 [queueing][queue].
-- Fallback ladder: WebRTC, then `webRtc.iceTransportPolicy: 'relay'`, then a signed-URL WebSocket, then text-only. Call `endSession()` and wait for `onDisconnect` between attempts, with fresh credentials each time. UDP-blocking venue Wi-Fi breaks WebRTC: keep a phone hotspot.
+- Call queueing is on by default: a queued session is "connected" and its hold audio arrives as agent audio, so the avatar mouths it; `queue_status` reaches only `onIncomingEvent`; a timeout closes with code 4300 [queueing][queue]. Show a queued state from `queue_status` (`waiting`, `admitted`, `timed_out`) with the mouth still until `admitted`, and treat a timeout as busy, not as a network failure for the fallback ladder.
+- Fallback ladder: WebRTC, then `webRtc.iceTransportPolicy: 'relay'`, then a signed-URL WebSocket, then text-only. Call `endSession()` and wait for `onDisconnect` between attempts, or for `onError` when `onConnect` never fired (a start that fails while connecting reports only `onError`), with fresh credentials each time. UDP-blocking venue Wi-Fi breaks WebRTC: keep a phone hotspot.
 - WebRTC lip-sync is approximate: no playback events, speaker-detection lag, about 60–110 ms analyser lag (estimate). Fine for a cartoon.
 - Later visemes: a/ä→A; e/i→E; o/ö/u/w/å/y/ü→O (Finnish y is rounded, not E); m/b/p→M; f/v→F; space and punctuation→M. Schedule chunks at `max(arrival + offset, previous end)` and clear them on interruption.
 - Docs drift: `await startSession()`, `sendUserMessage({text})`, `message.type === 'agent_response'` and `await getInputVolume()` are wrong for 1.22.1.
@@ -265,7 +268,7 @@ import { useCallback, type ReactNode } from "react";
 import { ConversationProvider, useConversationControls, type Conversation } from "@elevenlabs/react";
 import { signals, upsertAgentTurn } from "./agentSignals";
 
-const GATEWAY_TOOLS = new Set(["search_products", "create_quote", "place_order"]);
+const GATEWAY_TOOLS = new Set(["search_products", "get_offers", "create_quote", "place_order"]);
 
 export function AgentRoot({ children }: { children: ReactNode }) {
   return (
@@ -353,8 +356,8 @@ Cow mode is a renderer switch on the same agent, branch, prompt, tools and gatew
 - **Muting.** `setVolume` sets `HTMLAudioElement.volume` on WebRTC and a GainNode on WebSocket (worklet → gain → analyser → hidden `<audio>`) *(corrected)* (local check). iOS ignores `.volume` but honours `.muted`, so an iPhone or iPad needs the WebSocket transport or a hack on SDK internals [MDN volume][mdnvol] [WebKit][wk241657]. On WebRTC `getOutputVolume()` still follows the muted speech; on WebSocket it reads about 0. No initial-volume option exists: pass `onConversationCreated` (§5 sketch).
 - **Browser audio.** Resume the AudioContext in the Start click [autoplay][autoplay]. iPhones silence Web Audio with the ring switch unless `navigator.audioSession.type = 'playback'` (Safari 17+) [WebKit][wk237322]. Chrome-wide echo cancellation (default "in most cases" since about Chrome 106) reportedly also cancels Web Audio playback on desktop Chrome; Edge and others may not; low confidence *(corrected)* [Chromium][craec].
 - **Barge-in.** `turn.interruption_ignore_terms` (exact match) keeps "moo" and "muu" from interrupting the agent, but a moo heard while it listens still becomes a user turn; "muu" is also Finnish for "other" [create][create] [conversation flow][flow].
-- **Mood timing.** Tool results arrive before the agent talks about them, so alarmed and celebratory moos are dependable; reply text arrives late, so the "question" mood must come from streamed parts. Full tool payloads carry `is_error`, `is_blocked` and `truncated` (64 KB) and fire twice if both tool events are on [client events][events].
-- **Assets.** The generation script sets `model_id` explicitly, makes 4 takes per mood (greet, happy, question, alarmed, celebrate, and a looping chewing "thinking"), uses 1.4–6 s one-shot prompts with `prompt_influence` about 0.6, retries on 429 (`ApiError.status_code`) and writes `manifest.json` plus `PROVENANCE.json` to `web/public/sfx/moo` (served at `/sfx/moo/`). The player keeps one AudioContext with two channels (moos and the chewing loop), decodes on page load, resumes in the click, and exposes an analyser for the mouth.
+- **Mood timing.** Tool results arrive before the agent talks about them, so alarmed and celebratory moos are dependable; reply text arrives late, so the "question" mood must come from streamed parts. Full tool payloads carry `is_error`, `is_blocked` and `truncated` (64 KB) and fire twice if both tool events are on. The hook needs `agent_tool_request`, `agent_tool_response_full_payload`, `agent_chat_response_part` and `guardrail_triggered` in `client_events` (all in the §4 excerpt). `guardrail_triggered` fires only when a guardrail ends the call, so an alarmed moo from it will rarely play [client events][events].
+- **Assets.** The generation script sets `model_id` explicitly, makes 4 takes per mood (greet, happy, question, alarmed, celebrate, and a looping chewing "thinking"), uses one-shot prompts of 1.4–3 s (6 s for the looping chewing clip) with `prompt_influence` about 0.6, retries on 429 (`ApiError.status_code`) and writes `manifest.json` plus `PROVENANCE.json` to `web/public/sfx/moo` (served at `/sfx/moo/`). The player keeps one AudioContext with two channels (moos and the chewing loop), decodes on page load, resumes in the click, and exposes an analyser for the mouth.
 - **Talking cow (optional).** A `cow` branch selected by `branch_id` at token time shares tool definitions, but versioned `platform_settings` (overrides, guardrails, webhooks) can drift per branch: diff the live configs and run the same tests with `branch_id` [versioning][versioning].
 
 ### Gotchas and risks
@@ -377,7 +380,7 @@ import { useEffect, useRef } from "react";
 import { useConversation, stripAudioTags } from "@elevenlabs/react";
 import type { MooPlayer, Mood } from "./MooPlayer";
 
-const GATEWAY_TOOLS = new Set(["search_products", "get_offer", "create_quote", "place_order"]);
+const GATEWAY_TOOLS = new Set(["search_products", "get_offers", "create_quote", "place_order"]);
 type ToolEvent = { is_error: boolean; is_blocked?: boolean; truncated?: boolean; full_tool_result?: string };
 
 function moodFromTool(e: ToolEvent): Mood | null { // the gateway decides the mood, not the LLM
@@ -394,10 +397,11 @@ function moodFromTool(e: ToolEvent): Mood | null { // the gateway decides the mo
 // Keep mounted for the whole session and toggle `enabled`: listeners are composed at startSession.
 export function useCowMode(enabled: boolean, moo: MooPlayer) {
   const next = useRef<Mood>("greet"), draft = useRef(""), mooing = useRef(false), wasMuted = useRef(false);
-  const { mode, isMuted, setMuted } = useConversation({
-    volume: enabled ? 0 : 1, // same agent: only its voice is silenced
+  // No `volume` prop: useConversation applies it with an unguarded setVolume, which throws in text-only sessions.
+  const { mode, status, isMuted, setMuted, setVolume } = useConversation({
     onAgentToolRequest: t => { if (enabled && GATEWAY_TOOLS.has(t.tool_name)) moo.startLoop(); },
     onAgentToolResponse: e => { moo.stopLoop(); const m = moodFromTool(e); if (m) next.current = m; },
+    onDisconnect: () => moo.stopLoop(), // a call that ends mid-tool sends no tool response
     onGuardrailTriggered: () => { next.current = "alarmed"; },
     onAgentChatResponsePart: p => { // early text: agent_response comes too late
       draft.current = p.type === "start" ? "" : draft.current + (p.type === "delta" ? p.text : "");
@@ -405,6 +409,9 @@ export function useCowMode(enabled: boolean, moo: MooPlayer) {
         next.current = "question";
     },
   });
+  useEffect(() => { // same agent: only its voice is silenced
+    try { setVolume({ volume: enabled ? 0 : 1 }); } catch { /* not connected yet, or a text-only session */ }
+  }, [enabled, status, setVolume]);
   const safeMute = (m: boolean) => { try { setMuted(m); } catch { /* call already closed */ } };
   const stopMoo = () => { mooing.current = false; moo.stopOneShot(); safeMute(wasMuted.current); };
 
@@ -427,7 +434,7 @@ export function useCowMode(enabled: boolean, moo: MooPlayer) {
 }
 ```
 
-Fixed against the research: no throw from `setMuted` at the end of a call, debounced stop, separate chewing channel, early "question" mood, truncated and failed results handled, MCP prompts not treated as escalation, the user's mute state restored.
+Fixed against the research: no throw from `setMuted` at the end of a call, debounced stop, separate chewing channel, early "question" mood, truncated and failed results handled, MCP prompts not treated as escalation, the user's mute state restored, no `volume` prop (it throws in text-only sessions), chewing stopped when the call ends.
 
 ### Open questions
 
@@ -457,16 +464,17 @@ One FastAPI app serves the REST/OpenAPI routes the webhook tools call and an MCP
 | Always-on PaaS: Fly.io (`auto_stop_machines = "off"`, about $2.19/month for 256 MB, no free tier for new organisations), Railway Hobby with Serverless off, or paid Render | Stable | Needs a card; bind `0.0.0.0:$PORT` | Judging |
 | ngrok free | One static dev domain | 1 GB/month, 4,000 requests/min; the monthly request quota is 20k or 100k depending on the page *(corrected)*; browser interstitial, not for API calls | Laptop backup |
 | Cloudflare quick tunnel | New random hostname every run | No SSE, 200 in-flight requests, no uptime guarantee | Development |
+| Cloudflare named tunnel | Stable hostname on a domain you have on Cloudflare (`cloudflared tunnel route dns` adds a CNAME to `<UUID>.cfargotunnel.com`) | Needs that domain, `cloudflared tunnel login` (cert.pem) and the laptop online | Laptop backup if T-2 finds a domain |
 | Render free | Stable | Sleeps after 15 min, about 1 min to wake, 512 MB | Avoid |
 
 *(corrected)* Fly's `min_machines_running` applies only with `auto_stop_machines` set to `stop` or `suspend`, in the primary region. Railway's Serverless sleep is 10 or 5 minutes depending on the page. Render renamed its paid plans on 2026-08-26.
 
-**Judge test path.** `npx -y @modelcontextprotocol/inspector@2.15.0 --cli https://GW/mcp --method tools/list --header "Authorization: Bearer $DEMO_KEY"` (verified) [Inspector][inspector]; `claude mcp add --transport http valio-aimo https://GW/mcp --header "Authorization: Bearer …"`, where it is unverified whether a header skips OAuth *(corrected)* [Claude Code][ccmcp]; Claude Desktop through `mcp-remote` 0.16.6 [mcp-remote][mcpremote]. claude.ai connectors call from Anthropic's cloud; header auth there is a limited beta, and user reports in the claude.ai MCP issue tracker (issue 1241) say headers have not been sent since about 2026-11-03 *(corrected, low confidence)* [connectors][connectors]. Offer an authless, read-only, rate-limited `/public/mcp` and middleware that defaults a missing `Content-Type`.
+**Judge test path.** `npx -y @modelcontextprotocol/inspector@2.15.0 --cli https://GW/mcp --method tools/list --header "Authorization: Bearer $DEMO_KEY"` (verified) [Inspector][inspector]; `claude mcp add --transport http valio-aimo https://GW/mcp --header "Authorization: Bearer …"`, where it is unverified whether a header skips OAuth *(corrected)* [Claude Code][ccmcp]; Claude Desktop through `mcp-remote` 0.16.6 [mcp-remote][mcpremote]. claude.ai connectors call from Anthropic's cloud; header auth there is a limited beta, and user reports in the claude.ai MCP issue tracker (issue 1241) say headers have not been sent since about 2026-11-03 *(corrected, low confidence)* [connectors][connectors]. Offer an authless, read-only, rate-limited `/public/mcp`: a second `MCPServer` mounted at `/public` before `Mount("/")` (after it, 404), whose `session_manager.run()` is entered in the same lifespan, for example with an `AsyncExitStack` (otherwise 500, "Task group is not initialized"). Add middleware that defaults a missing `Content-Type` and `Accept` (no `Accept` gets 406).
 
 ### Gotchas and risks
 
 - Generated code and tutorials still import `mcp.server.fastmcp`: review imports.
-- Every ElevenLabs request fails with a plain-text 421 if the public host is missing from `allowed_hosts`, and the reason shows only in logs. After a host change, update `PUBLIC_HOST`, restart, then update `gateway_host` in ElevenLabs.
+- Every MCP request through the public URL (Inspector, Claude Code, claude.ai, other agents) fails with a plain-text 421 if the public host is missing from `allowed_hosts`. The REST routes the webhook tools call have no Host check, so a working ElevenLabs call does not prove `/mcp` works: run the Inspector against the public URL too. After a host change, update `PUBLIC_HOST`, restart, then update `gateway_host` in ElevenLabs.
 - Use exact paths: ElevenLabs does not carry headers through redirects.
 - Cold starts exceed the 20 s / 30 s timeouts: use an always-on instance and a `/health` keep-warm ping.
 - Never `json.load` the catalogue at start-up on a 512 MB instance; build the index at image build.
@@ -490,7 +498,7 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
-import service  # the one guarded service layer, shared with REST
+from . import service  # gateway/service.py: the one guarded service layer, shared with REST
 
 BASE, HOST = os.environ.get("PUBLIC_BASE_URL", "http://127.0.0.1:8000"), os.environ.get("PUBLIC_HOST")
 AGENT_KEYS = {"judge": os.environ.get("KEY_JUDGE", "")}  # one bearer key (and mandate) per external agent
@@ -584,7 +592,7 @@ ElevenLabs: EL-10. Team: T-2. Mentors: M-8, M-10. Details in [§11](#11-open-que
 
 ### How we use it
 
-Two open interfaces, MCP and OpenAPI REST, sit over one service layer. The trust layer borrows current agent-commerce shapes without claiming conformance: UCP's checkout statuses and escalation, AP2's open-mandate constraints and deterministic validation, and JWS over RFC 8785 for signed quotes, receipts and a hash-chained audit log anyone can verify with the published JWKS. Products carry schema.org JSON-LD with checked GS1 GTINs. Peppol BIS Ordering is the production path for approved orders. The EU AI Act and GDPR set the disclosure and retention rules.
+Two open interfaces, MCP and OpenAPI REST, sit over one service layer. The trust layer borrows current agent-commerce shapes without claiming conformance: UCP's checkout statuses and escalation, AP2's open-mandate constraints and deterministic validation, and JWS over RFC 8785 for signed quotes and receipts that anyone can verify with the published JWKS, plus a hash-chained audit log. Products carry schema.org JSON-LD with checked GS1 GTINs. Peppol BIS Ordering is the production path for approved orders. The EU AI Act and GDPR set the disclosure and retention rules.
 
 ### Key facts
 
@@ -602,7 +610,7 @@ Two open interfaces, MCP and OpenAPI REST, sit over one service layer. The trust
 | schema.org, GS1 Digital Link | v30.1; URI syntax 1.7.0 (low confidence) | Implement |
 | Peppol BIS Ordering 3.0 | Mature; 3.0.17 mandatory since 2026-08-17 | Stretch |
 | OTel GenAI conventions | "Development", no release | Observability |
-| EU AI Act Art. 50; GDPR | Art. 50 in force since 2 Aug 2026 | Must |
+| EU AI Act Art. 50; GDPR | Art. 50 applies since 2 Aug 2026 | Must |
 | European Business Wallet | Proposal COM(2025) 838 | Roadmap |
 
 - **MCP 2026-07-28** drops the initialize handshake and `Mcp-Session-Id`; state lives in server-minted handles re-authorised on every call [changelog][mcpcl] [tools][mcptools]. Annotations are untrusted hints; an `outputSchema` requires conforming `structuredContent`; credentials and payment need URL-mode elicitation [elicitation][mcpelicit]. Streamable HTTP: every POST carries `MCP-Protocol-Version` matching `_meta`; `Mcp-Method` is always required, `Mcp-Name` only on `tools/call`, `resources/read` and `prompts/get`; servers must validate `Origin`; GET, DELETE and session headers belong to older revisions *(corrected)* [HTTP][mcphttp]. Authorization is optional (OAuth 2.1, RFC 9728, RFC 8707); a static bearer key is enough for a demo [authorization][mcpauthz]. Anthropic donated MCP to the Linux Foundation on 9 Dec 2025 [Anthropic][aaif].
@@ -672,12 +680,12 @@ def audit_append(db, record: dict) -> str:  # same transaction as the state chan
     return entry_hash
 ```
 
-**Mandate evaluation that fails closed** (`gateway/policy.py`). Tested: an in-policy quote returns `[]`; 643.63 EUR after 1,500 spent, in a wrong category, with 60 units, returns all four rules; an unknown type and an expired mandate escalate. Run it again inside the order transaction so concurrent calls cannot overspend.
+**Mandate evaluation that fails closed** (`gateway/policy.py`). Tested: an in-policy quote returns `[]`; 643.63 EUR after 1,500 spent, in a wrong category, with 60 units, returns all four rules; an unknown type and an expired mandate escalate. Run it again inside the order transaction, opened with `BEGIN IMMEDIATE` before `spent` is read (Python's `sqlite3` otherwise opens it only at the first write), so concurrent calls cannot overspend.
 
 ```python
 from decimal import Decimal
 
-MANDATE = {"vct": "mandate.checkout.open.1", "buyer": "kitchen-42",  # AP2 shape, not an SD-JWT VC
+MANDATE = {"vct": "fi.valioaimo.mandate.open.1", "buyer": "kitchen-42",  # own type, not an SD-JWT VC; payment.* names are from AP2's open Payment Mandate
            "valid_from": "2026-11-13", "valid_to": "2026-12-31",
            "constraints": [{"type": "payment.amount_range", "min": "0.00", "max": "500.00", "currency": "EUR"},
                            {"type": "payment.budget", "max": "2000.00", "currency": "EUR"},
@@ -754,7 +762,7 @@ Sev: H can sink the demo or the trust story; M costs hours or credibility; L min
 
 | # | Sev | Risk | Mitigation | Owner track |
 |---:|---|---|---|---|
-| 1 | H | ElevenLabs cannot reach the gateway (local URL, 421 Host check, redirects) | Public HTTPS URL from day 1; `allowed_hosts`; exact paths; test from ElevenLabs on day 1 | gateway/data |
+| 1 | H | ElevenLabs or MCP clients cannot reach the gateway (local URL, redirects; 421 Host check on `/mcp` only) | Public HTTPS URL from day 1; exact paths; `PUBLIC_HOST` in `allowed_hosts`; on day 1 test the webhooks from ElevenLabs and `/mcp` with the Inspector over the public URL | gateway/data |
 | 2 | H | Cold or sleeping instance exceeds the 20 s / 30 s timeouts | Always-on instance, keep-warm ping | demo/QA |
 | 3 | H | `system__conversation_id` differs from the token's id | Day-1 smoke test; bind on first use | trust/policy/audit |
 | 4 | H | Browser-controlled input treated as authority | Authority only from key, session token, binding and gateway-recorded confirmation; overrides off | trust/policy/audit |
