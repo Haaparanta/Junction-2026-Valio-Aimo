@@ -3,9 +3,11 @@ import { useConversationControls } from "@elevenlabs/react";
 import { api, errorText, eur, helsinki, type Offer, type OrderResponse, type QuoteLine } from "../api";
 import { personaName } from "../persona";
 import { answerConfirmation } from "../voice/ClientTools";
+import { basketNote, quoteNote } from "../voice/notes";
 import { focusBasket, quoteLoaded, showToast, ui, useUi } from "../voice/store";
+import { useAgentNote } from "../voice/useAgentNote";
 import { applyBasket, hasBasket, quoteBasketNow, refreshBasket } from "./actions";
-import { flagLabel, orderRequestMessage, quoteIsStale } from "./basket";
+import { flagLabel, orderRequestMessage, quoteIsStale, refusal } from "./basket";
 import { ProductButton } from "./ProductDetails";
 import { useFetch } from "./useFetch";
 
@@ -47,6 +49,7 @@ export function OfferCards() {
   const [chosen, setChosen] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [added, setAdded] = useState<Record<string, number>>({});
+  const notify = useAgentNote(); // during a call, the agent hears about the change
   useEffect(() => {
     setChosen(null); // a new search starts a new choice
     setAdded({});
@@ -69,8 +72,9 @@ export function OfferCards() {
         }));
         return;
       }
-      if (r.reason_code || !hasBasket(r)) {
-        ui.set(showToast(r.message_for_user?.en || "The basket did not change."));
+      const refused = refusal(r);
+      if (refused || !hasBasket(r)) {
+        ui.set(showToast(refused ?? "The basket did not change."));
         return;
       }
       const lineId = r.line?.line_id ?? target?.lineId ?? null;
@@ -79,7 +83,10 @@ export function OfferCards() {
         ...(target ? { replaceLine: null } : {}),
         ...showToast(target ? `Replaced line ${target.lineId}.` : lineId ? `Added as line ${lineId}.` : "Added to the basket."),
       }));
-      if (lineId !== null) setAdded((a) => ({ ...a, [o.offer_id]: lineId }));
+      if (lineId !== null) {
+        setAdded((a) => ({ ...a, [o.offer_id]: lineId }));
+        notify(basketNote(target ? "replace" : "add", lineId, r.basket, r.line));
+      }
     } catch (e) {
       ui.set(showToast(`Could not add it to the basket: ${errorText(e)}`));
     } finally {
@@ -173,6 +180,7 @@ export function QuoteCard({ onAsk }: { onAsk: (text: string) => void }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [staleHere, setStaleHere] = useState(false); // the gateway answered quote_stale
   const [orderFailed, setOrderFailed] = useState(false); // confirmed here, but the order call failed
+  const notify = useAgentNote();
   useEffect(() => {
     setMsg(null);
     setStaleHere(false);
@@ -254,6 +262,7 @@ export function QuoteCard({ onAsk }: { onAsk: (text: string) => void }) {
   const newQuote = () => run(async () => {
     if (!q.basket_id) return;
     const r = await quoteBasketNow(q.basket_id);
+    notify(quoteNote(r));
     if (!r.quote_id) setMsg(r.message_for_user.en || "No quote came back.");
   });
 

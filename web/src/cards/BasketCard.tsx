@@ -7,7 +7,9 @@ import { useEffect, useState } from "react";
 import { api, errorText, eur, helsinki, type Basket, type BasketLine, type Offer } from "../api";
 import { BASKET_TOOLS } from "../cow/mood";
 import { personaName } from "../persona";
+import { basketNote, changeKind, quoteNote } from "../voice/notes";
 import { focusBasket, receiveBasket, showQuote, showToast, ui, useUi } from "../voice/store";
+import { useAgentNote } from "../voice/useAgentNote";
 import { applyBasket, hasBasket, quoteBasketNow, restoreLine } from "./actions";
 import {
   buildPatch, chipFlags, countsText, flagLabel, flagNote, formatAmount, lineDomId, needsAttention, refusal, statusLabel,
@@ -132,6 +134,7 @@ export function BasketCard() {
   const [quoting, setQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<number | null>(null);
+  const notify = useAgentNote(); // during a call, every change on screen is told to the agent
 
   useEffect(() => {
     if (!basketId) return;
@@ -173,7 +176,9 @@ export function BasketCard() {
     try {
       const r = await api.patchLine(b.basket_id, l.line_id, buildPatch(change));
       applyBasket(r);
-      return refusal(r);
+      const refused = refusal(r);
+      if (!refused && hasBasket(r)) notify(basketNote(changeKind(change), l.line_id, r.basket, r.line));
+      return refused;
     } catch (e) {
       return errorText(e);
     }
@@ -191,10 +196,15 @@ export function BasketCard() {
       }
       // One update: the row goes and the toast with Undo comes, so focus can move to Undo.
       const basketOf = b.basket_id;
+      const undo = async () => {
+        const back = await restoreLine(basketOf, l.line_id);
+        if (hasBasket(back) && !refusal(back)) notify(basketNote("restore", l.line_id, back.basket, back.line));
+      };
       ui.set((s) => ({
         ...(hasBasket(r) ? receiveBasket(s, r.basket) : {}),
-        ...showToast(`Removed line ${l.line_id}.`, { label: "Undo", run: () => void restoreLine(basketOf, l.line_id) }),
+        ...showToast(`Removed line ${l.line_id}.`, { label: "Undo", run: () => void undo() }),
       }));
+      if (hasBasket(r)) notify(basketNote("remove", l.line_id, r.basket));
     } catch (e) {
       ui.set(showToast(`Could not remove line ${l.line_id}: ${errorText(e)}`));
     } finally {
@@ -207,6 +217,7 @@ export function BasketCard() {
     setQuoteError(null);
     try {
       const r = await quoteBasketNow(b.basket_id);
+      notify(quoteNote(r));
       if (r.reason_code !== "basket_incomplete" && !r.quote_id) setQuoteError(r.message_for_user.en || "No quote came back.");
     } catch (e) {
       setQuoteError(errorText(e));
