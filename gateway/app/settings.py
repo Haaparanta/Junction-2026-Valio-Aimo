@@ -1,10 +1,12 @@
 """Gateway settings, read from the environment and git-ignored env files (names in .env.example)."""
 
+import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated, Any
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -39,6 +41,27 @@ class Settings(BaseSettings):
     as_of: str = "2026-11-14T10:00:00+02:00"
     cookie_secure: bool = False  # True behind HTTPS in production
     web_dist: Path | None = Field(default=REPO_ROOT / "web" / "dist")  # built UI served at / when present
+
+    # External AI agents over MCP (PLAN M12.2): agent name -> SHA-256 hex of its bearer key, never the key itself.
+    # MCP_AGENT_KEYS='{"claude-code": "<sha256 hex>"}'. Every key maps to the external-agent mandate (quote only).
+    mcp_agent_keys: Annotated[dict[str, str], NoDecode] = Field(default_factory=dict)
+    # Host and Origin allowlists of /mcp (DNS-rebinding protection); PUBLIC_HOST is added to both at startup.
+    mcp_allowed_hosts: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    )
+    mcp_allowed_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    )
+
+    @field_validator("mcp_agent_keys", "mcp_allowed_hosts", "mcp_allowed_origins", mode="before")
+    @classmethod
+    def _json_or_default(cls, v: Any, info: Any) -> Any:
+        """JSON from the environment; an empty value (as copied from .env.example) keeps the default."""
+        if isinstance(v, str):
+            if not v.strip():
+                return cls.model_fields[info.field_name].get_default(call_default_factory=True)
+            return json.loads(v)
+        return v
 
 
 @lru_cache

@@ -3,8 +3,11 @@
 * Voice (ElevenLabs webhook tools): X-Gateway-Key (workspace secret), X-Conversation-Id
   (system__conversation_id) and X-Session-Token (secret__session_token), checked against the stored binding.
 * Web (buyer UI): the demo login cookie.
+* External AI agents (MCP): a bearer key per agent, stored only as its SHA-256 (MCP_AGENT_KEYS), mapped to the
+  external-agent mandate.
 """
 
+import hashlib
 import hmac
 import time
 from dataclasses import dataclass
@@ -35,14 +38,26 @@ BUYERS: dict[str, Buyer] = {
     "head_chef": Buyer(
         "head_chef", "Head chef Mikko (demo)", "buyer-91c2", "kitchen-42", "mandate-head-chef", "approver", "5000.00"
     ),
+    # External AI agents (PLAN M7.1, M12.2): quote only, so every order of theirs goes to a human approver.
+    "external_agent": Buyer(
+        "external_agent",
+        "External AI agent (demo)",
+        "agent-e5d1",
+        "kitchen-42",
+        "mandate-external-agent",
+        "buyer",
+        "0.00",
+    ),
 }
+EXTERNAL_AGENT = "external_agent"
 
 
 @dataclass(frozen=True)
 class Caller:
-    channel: Literal["voice", "web"]
+    channel: Literal["voice", "web", "mcp"]
     buyer: Buyer
     conversation_id: str | None = None
+    agent_id: str | None = None  # the external agent's name from MCP_AGENT_KEYS (channel "mcp")
 
 
 def get_store(request: Request) -> Store:
@@ -106,3 +121,27 @@ def any_caller(
 
 CallerDep = Annotated[Caller, Depends(any_caller)]
 WebBuyerDep = Annotated[Buyer, Depends(web_buyer)]
+
+
+# ---- external AI agents (MCP): a bearer key per agent ----
+
+
+def key_hash(key: str) -> str:
+    """What MCP_AGENT_KEYS stores for a key: its SHA-256, hex."""
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def bearer_caller(settings: Settings, authorization: str | None) -> Caller | None:
+    """The external agent behind `Authorization: Bearer <key>`, or None for no key or an unknown one."""
+    scheme, _, key = (authorization or "").partition(" ")
+    key = key.strip()
+    if scheme.lower() != "bearer" or not key:
+        return None
+    presented = key_hash(key).encode()
+    agent_id = None
+    for name, stored in settings.mcp_agent_keys.items():  # compare every entry: no early exit on a match
+        if hmac.compare_digest(presented, stored.strip().lower().encode()):
+            agent_id = name
+    if agent_id is None:
+        return None
+    return Caller("mcp", BUYERS[EXTERNAL_AGENT], None, agent_id)
