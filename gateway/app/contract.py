@@ -28,6 +28,8 @@ ReasonCode = Literal[
     "basket_incomplete",  # quote_basket while a line is not priced; the answer lists those lines
     "quote_stale",  # confirm or place_order on a quote whose basket changed after it was made
     "basket_locked",  # a change to an ordered basket; a new basket is needed
+    "approval_required",  # the policy needs a human approval for a reason other than a limit (M7.2)
+    "policy_denied",  # the policy refuses the order outright, e.g. an allergen contradiction (M7.2)
 ]
 OfferFlag = Literal[
     "CUTOFF_PASSED",
@@ -311,6 +313,10 @@ class Order(BaseModel):
     approval_url: str | None = None
     created_at: str
     receipt_jws: str | None = None
+    reason_code: ReasonCode | None = None  # why it is not completed: limit_exceeded, price_changed, ...
+    reasons: list[str] = Field(default_factory=list)  # 'CODE: detail' strings from the policy or the re-check
+    completed_at: str | None = None
+    canceled_at: str | None = None
 
 
 class OrderResponse(Envelope):
@@ -325,19 +331,66 @@ class CancelOrderRequest(_Request):
     reason: str = Field(default="", max_length=200, description="Short reason the buyer gave, if any.")
 
 
+ApprovalOutcome = Literal["approved", "rejected", "expired", "voided", "withdrawn"]
+
+
 class Approval(BaseModel):
+    """status: requires_escalation while pending, completed when approved, canceled otherwise (see outcome)."""
+
     approval_id: str
     status: TradeStatus
     order_id: str
     quote_id: str
-    reasons: list[str]
-    decide_by: str
+    reasons: list[str]  # 'CODE: detail' strings (M7.2)
+    decide_by: str  # the earliest order-by time of the quote's lines minus 1 hour
     approver_role: str
+    buyer_name: str = ""
+    org_id: str = ""
+    quote_sha256: str = ""  # the quote this approval is for; any change to the quote voids it (M9.1)
+    created_at: str = ""
+    outcome: ApprovalOutcome | None = None
+    decided_by: str | None = None  # the approver's display name
+    decided_at: str | None = None
+    comment: str = ""
+    reason_code: ReasonCode | None = None  # approval_rejected, quote_expired, price_changed, quote_stale
 
 
 class ApprovalResponse(Envelope):
     approval_id: str
     approval: Approval
+    order: Order | None = None  # the order this approval is for, as it stands now
+
+
+class ApprovalDecisionRequest(_Request):
+    decision: Literal["approve", "reject"] = Field(description="approve or reject the order.")
+    comment: str = Field(default="", max_length=500, description="The approver's comment; empty for none.")
+
+
+class ApprovalLine(BaseModel):
+    name_fi: str
+    qty: int
+    api_unit: str
+    line_net: Money
+
+
+class ApprovalSummary(BaseModel):
+    """One row of the approver console's list."""
+
+    approval_id: str
+    status: TradeStatus  # requires_escalation while pending, then completed or canceled
+    order_id: str
+    quote_id: str
+    buyer_name: str
+    total_net: Money
+    total_gross: Money
+    delivery_date: str
+    decide_by: str
+    reasons: list[str]
+    lines: list[ApprovalLine]
+
+
+class ApprovalListResponse(Envelope):
+    approvals: list[ApprovalSummary]  # pending first, newest first; the approver's own org only
 
 
 # ---- basket: many products, one quote (docs/basket-plan.md M22) -------------------------------
