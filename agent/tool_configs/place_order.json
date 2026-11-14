@@ -1,0 +1,50 @@
+{
+  "type": "webhook",
+  "name": "place_order",
+  "description": "Turn a confirmed quote into an order. Call ONLY after create_quote returned a quote_id AND request_buyer_confirmation returned 'confirmed'. If the buyer asks to skip a limit, call it anyway: the gateway decides. Read message_for_user to the buyer.",
+  "response_timeout_secs": 15,
+  "tool_error_handling_mode": "passthrough",
+  "pre_tool_speech": "force",
+  "interruption_mode": "disable_during_tool_and_turn",
+  "api_schema": {
+    "url": "https://{{system__env_gateway_host}}/v1/orders",
+    "method": "POST",
+    "request_headers": {
+      "X-Gateway-Key": {
+        "secret_id": "<gateway_platform_key secret id>"
+      },
+      "X-Conversation-Id": {
+        "variable_name": "system__conversation_id"
+      },
+      "X-Session-Token": {
+        "variable_name": "secret__session_token"
+      }
+    },
+    "response_filter": {
+      "mode": "allow",
+      "filters": [
+        "status",
+        "reason_code",
+        "message_for_user",
+        "warnings",
+        "order_id",
+        "approval_id",
+        "total_net"
+      ]
+    },
+    "content_type": "application/json",
+    "request_body_schema": {
+      "type": "object",
+      "description": "Arguments for place_order.",
+      "properties": {
+        "quote_id": {
+          "type": "string",
+          "description": "quote_id exactly as returned by create_quote. Never invent or edit it."
+        }
+      },
+      "required": [
+        "quote_id"
+      ]
+    }
+  }
+}

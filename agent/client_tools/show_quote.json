@@ -1,0 +1,13 @@
+{
+  "type": "client",
+  "name": "show_quote",
+  "description": "Show the fixed-price quote on the buyer's screen. Call right after create_quote. Pass the id only.",
+  "expects_response": false,
+  "parameters": {
+    "type": "object",
+    "required": ["quote_id"],
+    "properties": {
+      "quote_id": {"type": "string", "description": "quote_id exactly as returned by create_quote."}
+    }
+  }
+}

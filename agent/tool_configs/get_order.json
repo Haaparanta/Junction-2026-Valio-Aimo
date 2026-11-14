@@ -1,0 +1,42 @@
+{
+  "type": "webhook",
+  "name": "get_order",
+  "description": "Get an order's current status, for example after the manager decided. Announce message_for_user.",
+  "response_timeout_secs": 10,
+  "tool_error_handling_mode": "passthrough",
+  "pre_tool_speech": "auto",
+  "interruption_mode": "allow",
+  "api_schema": {
+    "url": "https://{{system__env_gateway_host}}/v1/orders/{order_id}",
+    "method": "GET",
+    "request_headers": {
+      "X-Gateway-Key": {
+        "secret_id": "<gateway_platform_key secret id>"
+      },
+      "X-Conversation-Id": {
+        "variable_name": "system__conversation_id"
+      },
+      "X-Session-Token": {
+        "variable_name": "secret__session_token"
+      }
+    },
+    "response_filter": {
+      "mode": "allow",
+      "filters": [
+        "status",
+        "reason_code",
+        "message_for_user",
+        "warnings",
+        "order_id",
+        "approval_id",
+        "total_net"
+      ]
+    },
+    "path_params_schema": {
+      "order_id": {
+        "type": "string",
+        "description": "order_id exactly as place_order returned."
+      }
+    }
+  }
+}

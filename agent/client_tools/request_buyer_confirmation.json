@@ -1,0 +1,14 @@
+{
+  "type": "client",
+  "name": "request_buyer_confirmation",
+  "description": "Ask the buyer to confirm the quote with the Confirm button on screen, and wait for the answer. The result starts with 'confirmed' or 'declined' or 'cancelled'. Only after 'confirmed' may you call place_order.",
+  "expects_response": true,
+  "response_timeout_secs": 120,
+  "parameters": {
+    "type": "object",
+    "required": ["quote_id"],
+    "properties": {
+      "quote_id": {"type": "string", "description": "quote_id exactly as returned by create_quote."}
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "type": "client",
+  "name": "show_approval_request",
+  "description": "Show the approval request status on the buyer's screen after place_order returned requires_escalation.",
+  "expects_response": false,
+  "parameters": {
+    "type": "object",
+    "required": ["approval_id"],
+    "properties": {
+      "approval_id": {"type": "string", "description": "approval_id exactly as returned by place_order."}
+    }
+  }
+}
