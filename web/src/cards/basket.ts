@@ -123,8 +123,16 @@ export function unitView(
 /** An approval reason, "OVER_ORDER_CAP: EUR 1010.00 is above …": a plain title, the detail and the code. */
 export type ReasonView = { code: string; title: string; detail: string };
 export const REASON_TEXT: Record<string, string> = {
-  OVER_ORDER_CAP: "Over your order cap", OVER_BUDGET: "Over the weekly budget", SUBSTITUTION: "Includes a substitute",
-  NET_ABOVE_LIST: "Contract price above list price", UNIT_MISMATCH: "Unit differs from the catalogue",
+  OVER_ORDER_CAP: "Over your order cap", OVER_REQUISITION_CAP: "Over the cap for one delivery day",
+  OVER_WEEKLY_BUDGET: "Over the weekly budget", OVER_BUDGET: "Over the weekly budget",
+  QTY_OVER_MAX: "Quantity over your limit", CATEGORY_NOT_ALLOWED: "Category not in your mandate",
+  TEMPERATURE_NOT_ALLOWED: "Temperature class not in your mandate", DELIVERY_DAY_NOT_ALLOWED: "Delivery day not allowed",
+  SUBSTITUTION: "Includes a substitute", NET_ABOVE_LIST: "Contract price above list price",
+  PRICE_JUMP: "Price jump since your last order", UNIT_MISMATCH: "Unit differs from the catalogue",
+  ALLERGEN_DATA_UNKNOWN: "Allergen data unknown", MANDATE_REQUIRES_APPROVAL: "Every order needs approval",
+  PRICE_CHANGED: "Price changed since the quote", OUT_OF_STOCK: "Out of stock",
+  NO_MANDATE: "No mandate", ORDERS_NOT_ALLOWED: "Ordering not allowed", ALLERGEN_CONFLICT: "Allergen conflict",
+  MANDATE_INVALID: "Mandate signature invalid",
 };
 export function parseReason(text: string): ReasonView {
   const m = /^([A-Z][A-Z0-9_]{1,60})(?::\s*([\s\S]*))?$/.exec(text.trim());

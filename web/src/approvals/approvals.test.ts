@@ -33,12 +33,13 @@ describe("decision messages", () => {
     const m = decisionMessage("approve", answer("completed", null));
     expect(m.tone).toBe("ok");
     expect(m.title).toBe("Approved. Order O-1 is placed.");
-    expect(m.detail).toBe("Gateway says so.");
+    expect(m.detail).toBe(""); // the gateway's sentence would only repeat the title
   });
   it("reject cancels with approval_rejected", () => {
     const m = decisionMessage("reject", answer("canceled", "approval_rejected"));
     expect(m.tone).toBe("bad");
     expect(m.title).toMatch(/^Rejected\. Order O-1 is canceled/);
+    expect(m.detail).toBe("");
   });
   it("price_changed keeps the order waiting and asks for a new quote", () => {
     const m = decisionMessage("approve", answer("requires_escalation", "price_changed"));

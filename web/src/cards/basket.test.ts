@@ -124,6 +124,7 @@ describe("approval reasons", () => {
       code: "OVER_ORDER_CAP", title: "Over your order cap", detail: "EUR 1010.00 is above the 500.00 cap",
     });
     expect(parseReason("NEW_RULE")).toEqual({ code: "NEW_RULE", title: "new rule", detail: "" });
+    expect(parseReason("OVER_REQUISITION_CAP: EUR 2169.32 for 2026-11-16").title).toBe("Over the cap for one delivery day");
     expect(parseReason("a plain sentence")).toEqual({ code: "", title: "a plain sentence", detail: "" });
   });
 });

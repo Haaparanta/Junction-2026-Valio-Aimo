@@ -40,12 +40,10 @@ export function decisionMessage(decision: Decision, r: Approval): Outcome {
     };
   }
   if (r.status === "completed") {
-    return {
-      tone: "ok",
-      title: decision === "approve" ? `Approved. Order ${orderId} is placed.`
-        : `Already approved earlier: order ${orderId} is placed. Your earlier decision stands.`,
-      detail,
-    };
+    // A plain approval says it all in the title; the gateway's sentence would only repeat it.
+    return decision === "approve"
+      ? { tone: "ok", title: `Approved. Order ${orderId} is placed.`, detail: "" }
+      : { tone: "ok", title: `Already approved earlier: order ${orderId} is placed. Your earlier decision stands.`, detail };
   }
   if (r.status === "canceled") {
     const rejected = r.reason_code === "approval_rejected";
@@ -55,7 +53,7 @@ export function decisionMessage(decision: Decision, r: Approval): Outcome {
     return {
       tone: "bad",
       title: rejected ? `Rejected. Order ${orderId} is canceled and the buyer sees your comment.` : `Order ${orderId} is canceled.`,
-      detail,
+      detail: rejected && decision === "reject" ? "" : detail, // a plain rejection: the title says it all
     };
   }
   return { tone: "warn", title: detail || "Still waiting for a decision.", detail: "" };
