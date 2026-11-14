@@ -35,8 +35,15 @@ export type ProductSummary = {
 };
 export type ProductResponse = Envelope & { product: ProductSummary };
 export type ConfirmResponse = Envelope & { quote_id: string; confirmed: boolean; confirmation_ref: string | null };
+/** An order as the gateway holds it. receipt_jws: the signed receipt, once signing exists (PLAN M8.5). */
+export type Order = {
+  order_id: string; quote_id: string; status: string; total_net: string; total_gross: string; delivery_date: string;
+  approval_id: string | null; approval_url: string | null; created_at: string; receipt_jws: string | null;
+};
 export type OrderResponse = Envelope & {
   order_id: string | null; approval_id: string | null; approval_url: string | null; total_net: string | null;
+  /** GET /v1/orders/{id} carries the order itself; POST /v1/orders may leave it out. */
+  order?: Order | null;
 };
 export type LineSource = "voice" | "ui" | "import" | "image" | "dish";
 export type LineStatus = "priced" | "needs_choice" | "needs_amount" | "unmatched" | "not_deliverable" | "cutoff_passed";
@@ -85,10 +92,33 @@ export type DishJobState = "pending" | "running" | "done" | "failed";
 export type DishJobResponse = Envelope & {
   job_id: string; basket_id: string; state: DishJobState; result: DishResponse | null;
 };
-export type Approval = {
-  status: string; approval_id: string; message_for_user: Msg;
-  approval: { approval_id: string; status: string; order_id: string; quote_id: string; reasons: string[]; decide_by: string; approver_role: string };
+/** UCP status of an approval: requires_escalation while pending, then completed or canceled (PLAN M9). */
+export type ApprovalStatus = "requires_escalation" | "completed" | "canceled";
+export type ApprovalRecord = {
+  approval_id: string; status: string; order_id: string; quote_id: string; reasons: string[]; decide_by: string;
+  approver_role: string;
+  /** The approver's comment with the decision, when the gateway sends one ("" or absent: none). */
+  comment?: string | null;
 };
+/** GET /v1/approvals/{id} and POST …/decision. reason_code: approval_rejected, price_changed, quote_expired. */
+export type Approval = Envelope & { approval_id: string; approval: ApprovalRecord };
+export type ApprovalLine = { name_fi: string; qty: number; api_unit: string; line_net: string };
+/** One row of the approver's list: reasons are "CODE: detail" strings, money is decimal strings. */
+export type ApprovalSummary = {
+  approval_id: string; status: string; order_id: string; quote_id: string; buyer_name: string; total_net: string;
+  total_gross: string; delivery_date: string; decide_by: string; reasons: string[]; lines: ApprovalLine[];
+};
+/** GET /v1/approvals: the approver's own org, pending first, newest first. A buyer session gets 403. */
+export type ApprovalsResponse = Envelope & { approvals: ApprovalSummary[] };
+export type Decision = "approve" | "reject";
+/** The decision body: flat, both fields always sent ("" is no comment). */
+export type DecisionBody = { decision: Decision; comment: string };
+/** One audit entry (PLAN M10). detail is {fi, en}, or a summary text instead. */
+export type AuditEvent = {
+  seq: number; at: string; actor: string; channel: string; action: string; decision: string;
+  detail?: Msg | string | null; summary?: string | null; hash: string; prev_hash: string;
+};
+export type AuditResponse = { events: AuditEvent[] };
 export type Session = {
   mode: "webrtc" | "websocket"; conversation_token: string | null; signed_url: string | null;
   conversation_id: string | null; session_token: string; user_id: string; expires_in: number;
@@ -145,6 +175,23 @@ export const api = {
   /** Only when no call is running: during a call the agent places the order (two callers, two orders). */
   placeOrder: (quoteId: string) => call<OrderResponse>("POST", "/v1/orders", { quote_id: quoteId }),
   approval: (id: string) => call<Approval>("GET", `/v1/approvals/${seg(id)}`),
+
+  // ---- approvals and finished orders (PLAN M9, M10.4) ----
+  /** Approver sessions only: a buyer gets 403. */
+  approvals: () => call<ApprovalsResponse>("GET", "/v1/approvals"),
+  /** Approver sessions only. Deciding twice answers the first decision unchanged. */
+  decide: (approvalId: string, decision: Decision, comment: string) =>
+    call<Approval>("POST", `/v1/approvals/${seg(approvalId)}/decision`, { decision, comment } satisfies DecisionBody),
+  order: (orderId: string) => call<OrderResponse>("GET", `/v1/orders/${seg(orderId)}`),
+  /** The order's audit trail, oldest first; null while the route does not exist yet (HTTP 404). */
+  orderAudit: async (orderId: string): Promise<AuditResponse | null> => {
+    try {
+      return await call<AuditResponse>("GET", `/v1/orders/${seg(orderId)}/audit`);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) return null;
+      throw e;
+    }
+  },
 
   // ---- the basket (docs/basket-plan.md M22-M24) ----
   basket: (basketId: string) => call<BasketResponse>("GET", `/v1/baskets/${seg(basketId)}`),
