@@ -556,7 +556,7 @@ def test_errors_and_problems_are_bilingual():
 EXPECTED_TEMPLATE = [
     ("464306", "", "kevytmaitojuoma laktoositon", D(1000), "L", "2026-11-16", ""),
     ("", "", "voi", D(20), "KG", "2026-11-16", ""),
-    ("", "", "kananmuna", D(180), "PCS", None, ""),
+    ("", "", "kananmuna", D("10.8"), "KG", None, ""),
     ("", "", "vehnäjauho", D("12.5"), "KG", "2026-11-17", "takaovelle"),
 ]
 

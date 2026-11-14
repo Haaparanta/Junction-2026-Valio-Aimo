@@ -635,7 +635,7 @@ TEMPLATE_HEADER = ("tuotenumero", "tuote", "määrä", "yksikkö", "toimituspäi
 TEMPLATE_ROWS: tuple[tuple[str, str, int | float, str, date | None, str], ...] = (
     ("464306", "kevytmaitojuoma laktoositon", 1000, "l", date(2026, 11, 16), ""),
     ("", "voi", 20, "kg", date(2026, 11, 16), ""),
-    ("", "kananmuna", 180, "kpl", None, ""),
+    ("", "kananmuna", 10.8, "kg", None, ""),  # the real catalogue sells eggs per kg: 180 eggs is about 10.8 kg
     ("", "vehnäjauho", 12.5, "kg", date(2026, 11, 17), "takaovelle"),
 )
 
