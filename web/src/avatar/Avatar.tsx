@@ -3,13 +3,15 @@
  * animation driver move the mouth, eyes and breathing; data attributes carry state, expression and persona.
  */
 import { useEffect, useRef, useState } from "react";
+import { personaName } from "../persona";
 import { useUi } from "../voice/store";
 import { avatarState, expression } from "./state";
 import { useAvatarDriver } from "./useAvatarDriver";
 
-const LABEL: Record<string, string> = {
-  idle: "Not in a call", connecting: "Connecting…", queued: "Waiting for a free line…", listening: "Listening",
-  userSpeaking: "Hearing you", thinking: "Checking with the gateway…", speaking: "Speaking", error: "Connection problem",
+const LABEL: Record<string, (name: string) => string> = {
+  idle: () => "Not in a call", connecting: () => "Connecting…", queued: () => "Waiting for a free line…",
+  listening: () => "Listening", userSpeaking: () => "Hearing you", thinking: () => "Checking with the gateway…",
+  speaking: (n) => (n === "Mansikki" ? "Mooing" : "Speaking"), error: () => "Connection problem",
 };
 
 function useNow(ms: number) {
@@ -28,11 +30,12 @@ export function Avatar() {
   const persona = useUi((s) => s.persona);
   const state = avatarState(useUi((s) => s), now);
   const expr = expression(useUi((s) => s.lastOutcome), now);
-  const name = persona === "cow" ? "Mansikki" : "Aino";
+  const name = personaName(persona);
+  const label = LABEL[state]?.(name) ?? "";
 
   return (
     <figure className="avatar" data-state={state}>
-      <svg ref={ref} viewBox="0 0 240 240" role="img" aria-label={`${name}: ${LABEL[state]}`}
+      <svg ref={ref} viewBox="0 0 240 240" role="img" aria-label={`${name}: ${label}`}
            data-persona={persona} data-state={state} data-expression={expr} data-mouth="M">
         <circle className="halo" cx="120" cy="120" r="112" />
         <g className="breathe">
@@ -40,7 +43,7 @@ export function Avatar() {
         </g>
       </svg>
       <figcaption>
-        <strong>{name}</strong> · <span aria-live="polite">{LABEL[state]}</span>
+        <strong>{name}</strong> <span className="state" aria-live="polite">{label}</span>
       </figcaption>
     </figure>
   );

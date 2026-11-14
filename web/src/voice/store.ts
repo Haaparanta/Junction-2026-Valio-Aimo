@@ -23,12 +23,13 @@ export type Ui = {
   quoteId: string | null;
   approvalId: string | null;
   confirmQuoteId: string | null;
+  queuedText: string | null; // typed before a chat connected: sent on connect
 };
 
 export const initialUi: Ui = {
   phase: "idle", transport: null, conversationId: null, mode: "listening", userSpeaking: false, pendingTools: {},
   turns: [], toast: null, lastError: null, lastOutcome: null, queue: null, persona: "aino", offerSetId: null,
-  quoteId: null, approvalId: null, confirmQuoteId: null,
+  quoteId: null, approvalId: null, confirmQuoteId: null, queuedText: null,
 };
 
 type Listener = () => void;

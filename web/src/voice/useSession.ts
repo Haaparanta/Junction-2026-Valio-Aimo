@@ -6,6 +6,7 @@ import { useCallback } from "react";
 import { useConversationControls, type Conversation } from "@elevenlabs/react";
 import { api, HttpError, type Session } from "../api";
 import { mooPlayer } from "../cow/MooPlayer";
+import { personaName } from "../persona";
 import { ui, type Transport } from "./store";
 
 const CONNECT_TIMEOUT_MS = 10_000;
@@ -58,7 +59,8 @@ export function useSession() {
       const s: Session = await api.agentSession(transport === "webrtc" || transport === "relay" ? "webrtc" : "websocket");
       const common = {
         userId: s.user_id, // pseudonym, analytics only
-        dynamicVariables: { secret__session_token: s.session_token }, // reaches tool headers only, never the LLM
+        // secret__ reaches tool headers only, never the LLM. persona_name is only ever "Aino" or "Mansikki".
+        dynamicVariables: { secret__session_token: s.session_token, persona_name: personaName(ui.get().persona) },
         onConversationCreated: (c: Conversation) => {
           // Cow mode: same agent, voice muted from the first word (PLAN M17.2).
           if (ui.get().persona === "cow" && transport !== "text") {
