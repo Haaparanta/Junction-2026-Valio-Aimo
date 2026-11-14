@@ -52,3 +52,57 @@ gcloud run services update valio-aimo --project famous-hull-514004-t9 --region e
 ```bash
 gcloud run services logs read valio-aimo --project famous-hull-514004-t9 --region europe-north1 --limit 50
 ```
+
+## CI and continuous deploy: Cloud Build
+
+This repo uses Google Cloud Build, not GitHub Actions. [`cloudbuild.yaml`](../cloudbuild.yaml) runs these steps:
+
+1. `secrets`: a gitleaks scan of the checkout.
+2. `gateway` and `web`, in parallel:
+   - gateway: ruff, ruff format, pytest and the agent tool-config drift check;
+   - web: tsc, vitest and the Vite build.
+3. On `main` only, or with `_DEPLOY=true`: build the image, push it to Artifact Registry and deploy it to Cloud Run.
+
+The deploy changes only the image. Env vars, secrets, scaling and public access stay as configured above.
+
+Run it by hand. The first command runs checks only; the second runs checks and deploys:
+
+```bash
+gcloud builds submit --config cloudbuild.yaml --region europe-north1 --project famous-hull-514004-t9 .
+```
+
+```bash
+gcloud builds submit --config cloudbuild.yaml --region europe-north1 --project famous-hull-514004-t9 \
+  --substitutions _DEPLOY=true .
+```
+
+### Triggers
+
+Set up on 14 Nov 2026 in `famous-hull-514004-t9` / `europe-north1`:
+- GitHub connection `valio-github`, using the Google Cloud Build app installation that covers this repo only;
+- repository `junction-valio-aimo`;
+- trigger `ci-pull-request`: checks on every pull request into `main`;
+- trigger `deploy-main`: checks, then a Cloud Run deploy, on every push to `main`.
+
+Both triggers run as the default compute service account. To recreate them, follow these steps:
+
+
+1. Connect GitHub (2nd-gen connection). The command prints a link: open it, authorise the Cloud Build GitHub App and install it on `Haaparanta/Junction-2026-Valio-Aimo` only.
+
+   ```bash
+   gcloud builds connections create github valio-github --region europe-north1 --project famous-hull-514004-t9
+   ```
+
+2. Link the repository, then create the two triggers:
+
+   ```bash
+   gcloud builds repositories create junction-valio-aimo --connection valio-github --region europe-north1 \
+     --project famous-hull-514004-t9 --remote-uri https://github.com/Haaparanta/Junction-2026-Valio-Aimo.git
+   REPO=projects/famous-hull-514004-t9/locations/europe-north1/connections/valio-github/repositories/junction-valio-aimo
+   gcloud builds triggers create github --name ci-pull-request --region europe-north1 --project famous-hull-514004-t9 \
+     --repository $REPO --pull-request-pattern '^main$' --build-config cloudbuild.yaml
+   gcloud builds triggers create github --name deploy-main --region europe-north1 --project famous-hull-514004-t9 \
+     --repository $REPO --branch-pattern '^main$' --build-config cloudbuild.yaml
+   ```
+
+Cloud Build reports each run back to the pull request as a GitHub check.

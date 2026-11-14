@@ -1,0 +1,79 @@
+# CI and deploy on Google Cloud Build (GitHub Actions is not used in this repo).
+#
+#   Pull requests:  checks only (gateway and web in parallel, then a secret scan).
+#   Push to main:   checks, then build the image and deploy it to Cloud Run.
+#   By hand:        gcloud builds submit --config cloudbuild.yaml --region europe-north1 \
+#                     [--substitutions _DEPLOY=true]
+#
+# Triggers and the GitHub connection are described in docs/deploy.md.
+
+substitutions:
+  _REGION: europe-north1
+  _SERVICE: valio-aimo
+  _IMAGE: europe-north1-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/valio-aimo
+  _DEPLOY: "false"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+  dynamicSubstitutions: true
+
+steps:
+  - id: secrets
+    name: zricethezav/gitleaks:v8.30.1
+    waitFor: ["-"]  # first, before installs add node_modules and .venv
+    args: ["dir", "/workspace", "--redact", "--exit-code", "1", "--verbose"]
+
+  - id: gateway
+    name: python:3.13-slim
+    waitFor: [secrets]
+    entrypoint: bash
+    args:
+      - -euo
+      - pipefail
+      - -c
+      - |
+        pip install --quiet --no-cache-dir uv==0.13.8
+        uv sync --frozen
+        uv run ruff check .
+        uv run ruff format --check .
+        uv run pytest -q
+        uv run python agent/provision.py tools --check
+
+  - id: web
+    name: node:22-slim
+    waitFor: [secrets]
+    entrypoint: bash
+    args:
+      - -euo
+      - pipefail
+      - -c
+      - |
+        npm install --global --silent pnpm@12.18.0
+        pnpm install --frozen-lockfile
+        pnpm --filter web typecheck
+        pnpm --filter web test
+        pnpm --filter web build
+
+  - id: image
+    name: gcr.io/cloud-builders/docker
+    waitFor: [gateway, web]
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "$BRANCH_NAME" != "main" ] && [ "${_DEPLOY}" != "true" ]; then echo "not main: skip image"; exit 0; fi
+        docker build -t "${_IMAGE}:${BUILD_ID}" . && docker push "${_IMAGE}:${BUILD_ID}"
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    waitFor: [image]
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "$BRANCH_NAME" != "main" ] && [ "${_DEPLOY}" != "true" ]; then echo "not main: skip deploy"; exit 0; fi
+        # Only the image changes: env vars, secrets, scaling and public access stay as configured (docs/deploy.md).
+        gcloud run deploy "${_SERVICE}" --image "${_IMAGE}:${BUILD_ID}" --region "${_REGION}" --quiet
+
+timeout: 1200s
