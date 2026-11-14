@@ -137,6 +137,17 @@ def test_the_input_allergens_reach_every_ingredient():
     assert "oats" in r.warnings[0].en and "kaura" in r.warnings[0].fi
 
 
+def test_allergens_added_to_every_ingredient_are_one_short_warning():
+    vegan = DishInput(dish="chili sin carne", servings=40, need_date="2026-11-16", must_claims=["VEGAN"])
+    beans = ingredient("pavut", must_claims=["VEGAN"])
+    r = final(vegan, plan(beans, ingredient("sipuli", must_claims=[])))
+    assert all(i.search.must_not_allergens == ["AC", "AE", "AF", "AM", "UM"] for i in r.ingredients)
+    assert [w.en for w in r.warnings] == [
+        "Allergen exclusions (crustaceans, egg, fish, milk, molluscs) were added to every ingredient."
+    ]
+    assert "kaikille aineksille" in r.warnings[0].fi and bilingual(r.warnings)
+
+
 def test_lactose_free_never_adds_milk_to_an_ingredient():
     r = final(LACTOSE_FREE, plan(ingredient()))
     assert "AM" not in r.ingredients[0].search.must_not_allergens

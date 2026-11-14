@@ -40,10 +40,11 @@ LIST_SYSTEM = (
 
 IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"})
 
-# Request-path limits. A buyer or the voice agent is waiting, so one attempt gets 45 s (5 s to connect) and the SDK
+# Request-path limits. A buyer or the voice agent is waiting, so one attempt gets 60 s (5 s to connect) and the SDK
 # retries once (connection errors, timeouts, 429 and 5xx), instead of the SDK's 10 minutes and 2 retries.
-# scripts/eval_dish.py measures how long a dish takes; M27.4 sets the voice tool timeout from that.
-TIMEOUT_S = 45.0
+# scripts/eval_dish.py measured a dish plan at 35-51 s on claude-opus-5-5 at medium effort (median 40 s, 14 Nov
+# 2026), so 45 s would cut the slower dishes off. M27.4 sets the voice tool timeout from those timings.
+TIMEOUT_S = 60.0
 CONNECT_TIMEOUT_S = 5.0
 MAX_RETRIES = 1
 # The skill's non-streaming default. Thinking counts toward it too; a full dish plan is a few thousand tokens.

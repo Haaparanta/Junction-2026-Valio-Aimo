@@ -103,14 +103,19 @@ def finalize_breakdown(inp: DishInput, out: DishBreakdown) -> DishBreakdown:
         kept[k] = ing.model_copy(update={"per_serving": round(ing.amount / inp.servings, DECIMALS)})
     if changed:
         codes = sorted(added)
-        warnings.append(
-            Msg(
-                fi=f"Allergeenirajaus ({', '.join(ALLERGEN_NAMES[c][0] for c in codes)}) lisättiin aineksille: "
-                f"{', '.join(fi for fi, _ in changed)}.",
-                en=f"Allergen exclusions ({', '.join(ALLERGEN_NAMES[c][1] for c in codes)}) were added to: "
-                f"{', '.join(en for _, en in changed)}.",
+        fi_codes = ", ".join(ALLERGEN_NAMES[c][0] for c in codes)
+        en_codes = ", ".join(ALLERGEN_NAMES[c][1] for c in codes)
+        if len(changed) == len(kept):  # e.g. VEGAN, whose codes the prompt leaves to the gateway (B-13)
+            msg = Msg(
+                fi=f"Allergeenirajaus ({fi_codes}) lisättiin kaikille aineksille.",
+                en=f"Allergen exclusions ({en_codes}) were added to every ingredient.",
             )
-        )
+        else:
+            msg = Msg(
+                fi=f"Allergeenirajaus ({fi_codes}) lisättiin aineksille: {', '.join(n[0] for n in changed)}.",
+                en=f"Allergen exclusions ({en_codes}) were added to: {', '.join(n[1] for n in changed)}.",
+            )
+        warnings.append(msg)
 
     # A claim may be left off an ingredient it does not apply to (FREE_FROM_LACTOSE on sugar), but not off them all.
     if kept:
