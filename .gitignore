@@ -5,3 +5,15 @@ data/raw/
 node_modules/
 .venv/
 __pycache__/
+# Recorded mock-API fixtures: commit only if the mentors allow it
+data/fixtures/
+# Local build outputs
+dist/
+*.db
+.ruff_cache/
+.pytest_cache/
+agent/.env*
+!.env.example
+*.db-*
+web/tsconfig.tsbuildinfo
+*.tsbuildinfo

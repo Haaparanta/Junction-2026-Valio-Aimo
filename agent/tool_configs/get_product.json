@@ -1,0 +1,40 @@
+{
+  "type": "webhook",
+  "name": "get_product",
+  "description": "Get one product's compact record: name, unit, content per unit, claims and allergens.",
+  "response_timeout_secs": 10,
+  "tool_error_handling_mode": "passthrough",
+  "pre_tool_speech": "auto",
+  "interruption_mode": "allow",
+  "api_schema": {
+    "url": "https://{{system__env_gateway_host}}/v1/products/{product_id}",
+    "method": "GET",
+    "request_headers": {
+      "X-Gateway-Key": {
+        "secret_id": "<gateway_platform_key secret id>"
+      },
+      "X-Conversation-Id": {
+        "variable_name": "system__conversation_id"
+      },
+      "X-Session-Token": {
+        "variable_name": "secret__session_token"
+      }
+    },
+    "response_filter": {
+      "mode": "allow",
+      "filters": [
+        "status",
+        "reason_code",
+        "message_for_user",
+        "warnings",
+        "product"
+      ]
+    },
+    "path_params_schema": {
+      "product_id": {
+        "type": "string",
+        "description": "Six-digit product id exactly as a tool returned it."
+      }
+    }
+  }
+}

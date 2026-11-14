@@ -1,0 +1,13 @@
+{
+  "type": "client",
+  "name": "show_products",
+  "description": "Show the good-better-best option cards on the buyer's screen. Call right after get_offers. Pass ids only.",
+  "expects_response": false,
+  "parameters": {
+    "type": "object",
+    "required": ["offer_set_id"],
+    "properties": {
+      "offer_set_id": {"type": "string", "description": "offer_set_id exactly as returned by get_offers."}
+    }
+  }
+}

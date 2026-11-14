@@ -1,0 +1,15 @@
+{
+  "name": "valio-aimo-trusted-trade",
+  "private": true,
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "gateway": "uv run uvicorn app.main:app --app-dir gateway --port 8000 --reload --env-file .env.local",
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "typecheck": "pnpm --filter web typecheck",
+    "test": "pnpm --filter web test"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "type": "webhook",
+  "name": "find_substitutes",
+  "description": "Find safe alternatives for a product that cannot be delivered. Every substitute needs the buyer's consent.",
+  "response_timeout_secs": 20,
+  "tool_error_handling_mode": "passthrough",
+  "pre_tool_speech": "auto",
+  "interruption_mode": "allow",
+  "api_schema": {
+    "url": "https://{{system__env_gateway_host}}/v1/substitutes",
+    "method": "POST",
+    "request_headers": {
+      "X-Gateway-Key": {
+        "secret_id": "<gateway_platform_key secret id>"
+      },
+      "X-Conversation-Id": {
+        "variable_name": "system__conversation_id"
+      },
+      "X-Session-Token": {
+        "variable_name": "secret__session_token"
+      }
+    },
+    "response_filter": {
+      "mode": "allow",
+      "filters": [
+        "status",
+        "reason_code",
+        "message_for_user",
+        "warnings",
+        "original_product_id",
+        "substitutes"
+      ]
+    },
+    "content_type": "application/json",
+    "request_body_schema": {
+      "type": "object",
+      "description": "Arguments for find_substitutes.",
+      "properties": {
+        "product_id": {
+          "type": "string",
+          "description": "Six-digit Valio Aimo product id exactly as a tool returned it."
+        },
+        "amount": {
+          "type": "number",
+          "description": "How much the buyer needs, as a number."
+        },
+        "unit": {
+          "type": "string",
+          "description": "Unit of the amount: litres, kilograms or pieces.",
+          "enum": [
+            "L",
+            "KG",
+            "PCS"
+          ]
+        },
+        "need_date": {
+          "type": "string",
+          "description": "Delivery date needed, YYYY-MM-DD."
+        }
+      },
+      "required": [
+        "product_id",
+        "amount",
+        "unit",
+        "need_date"
+      ]
+    }
+  }
+}

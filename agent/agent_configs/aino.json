@@ -1,0 +1,58 @@
+{
+  "name": "Aino - Valio Aimo buyer agent",
+  "tags": ["junction-2026", "valio-aimo"],
+  "conversation_config": {
+    "agent": {
+      "language": "en",
+      "first_message": "Hi, I'm Aino, Valio Aimo's AI ordering assistant. This call is recorded and processed by our service providers. What does your kitchen need?",
+      "disable_first_message_interruptions": true,
+      "dynamic_variables": {"dynamic_variable_placeholders": {"secret__session_token": "unset"}},
+      "prompt": {
+        "llm": "claude-sonnet-5-5",
+        "reasoning_effort": "none",
+        "temperature": 0,
+        "timezone": "Europe/Helsinki",
+        "backup_llm_config": {"preference": "override", "order": ["claude-haiku-5-5"]},
+        "enable_parallel_tool_calls": false,
+        "built_in_tools": {
+          "language_detection": {"name": "language_detection", "params": {"system_tool_type": "language_detection"}},
+          "end_call": {"name": "end_call", "params": {"system_tool_type": "end_call"}}
+        }
+      }
+    },
+    "language_presets": {
+      "fi": {
+        "overrides": {
+          "agent": {
+            "first_message": "Hei, olen Aino, Valio Aimon tekoälyavustaja. Puhelu tallennetaan, ja sitä käsittelevät palveluntarjoajamme. Mitä keittiösi tarvitsee?"
+          }
+        }
+      }
+    },
+    "tts": {"model_id": "eleven_v4_turbo", "voice_id": "cgSgspJ2msm6clMCkdW9"},
+    "asr": {
+      "keywords": ["Valio", "Aimo", "Eila", "Arla", "laktoositon", "maitojuoma", "kevytmaitojuoma", "rasvaton", "novobox", "voi", "tilaa", "Mansikki"]
+    },
+    "turn": {
+      "interruption_ignore_terms": ["moo", "muu", "mu"],
+      "soft_timeout_config": {"timeout_seconds": 3.0, "message": "Hetkinen...", "use_llm_generated_message": false}
+    },
+    "conversation": {
+      "max_duration_seconds": 900,
+      "client_events": [
+        "conversation_initiation_metadata", "ping", "audio", "interruption", "user_transcript", "agent_response",
+        "agent_response_correction", "agent_chat_response_part", "client_tool_call", "agent_tool_request",
+        "agent_tool_response", "agent_tool_response_full_payload", "vad_score", "agent_response_complete",
+        "guardrail_triggered"
+      ]
+    }
+  },
+  "platform_settings": {
+    "auth": {"enable_auth": true},
+    "overrides": {
+      "conversation_config_override": {"agent": {"language": true}, "conversation": {"text_only": true}}
+    },
+    "privacy": {"retention_days": 30, "record_voice": false},
+    "call_limits": {"agent_concurrency_limit": 4}
+  }
+}
