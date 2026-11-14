@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from . import mcp_server
 from .api import session, tools, webhooks
 from .db import Store
 from .llm import LLM, AnthropicLLM
@@ -35,6 +36,7 @@ def create_app(
     app.include_router(tools.router)
     app.include_router(session.router)
     app.include_router(webhooks.router)
+    mcp_server.mount(app, settings)  # MCP at /mcp for external agents (PLAN M12), after the routers, before the web
     if settings.web_dist and (settings.web_dist / "index.html").is_file():
         # Production: the built buyer UI from the same origin (cookies, HTTPS for the microphone). Mounted last.
         app.mount("/", StaticFiles(directory=settings.web_dist, html=True), name="web")
