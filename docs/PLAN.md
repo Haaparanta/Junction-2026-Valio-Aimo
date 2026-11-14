@@ -240,7 +240,7 @@ How to read this section:
 | M6 | Signed quotes with fixed prices | B | P0 | 5 h | M3 | H16 |
 | M7 | Buyer mandates and the policy engine | B | P0 | 6 h | M1 | H14 |
 | M8 | Orders: lifecycle, pre-order re-check, UBL export | B | P0 | 5 h | M6, M7 | H20 |
-| M9 | Human approval flow and approver console | C + D | P0 | 6 h | M7, M8 | H24 |
+| M9 | Human approval flow and approver console | C + D | P0 | 6 h | M7, M8 (9.4 also M13, M15) | H24 |
 | M10 | Audit trail and evidence | B | P0 | 4 h | M1 | H22 |
 | M11 | Exceptions and safe substitutions | A + E | P1 | 6 h | M3, M4, M5 | H28 |
 | M12 | Open interfaces: MCP, OpenAPI, A2A agent card | C | P0 | 5 h | M1 (stubs), M5–M8 | H22 |
@@ -298,7 +298,7 @@ How to read this section:
 | 3.3 | Injectable as-of clock (`AS_OF` setting, shown as a badge in the UI). All cut-off logic uses Europe/Helsinki. | At Sat 14.11 10:00, 464306 is open; at Sun 18:00 it is `CUTOFF_PASSED` |
 | 3.4 | Offer normaliser: one typed offer per line, `{unit, qtyKind, qty, availableDate, orderBy, cutoffPassed, blocked, price, validity, flags[]}`. The unit comes from `scheduleLines[].salesUnit` (A-08). Placeholder amounts become "not tracked" (A-05). | Table-driven tests for X-01..X-20 produce the expected flags |
 | 3.5 | `plan_quantity` (G-03, F-02): units, lot-size rounding, overshoot and warnings. Content per API unit is the 2-of-3 vote of F-01: the static values from 2.3 plus the API comparison price, for shortlisted ids only. | 1,000 L gives 1,000 × 464306; 465244 converts through KI = 3.0 L (X-14); 463233 gives 2.1 kg per KI (X-21); 476738 is flagged as a conflict (X-23); lot-size caps hold (X-13) |
-| 3.6 | A SHA-256 hash of every raw response is kept as evidence | The hashes appear in quotes and in the audit log |
+| 3.6 | A SHA-256 hash of every raw response is kept as evidence | Every cached or replayed response stores its hash (tested here); quotes (M6) and audit rows (M10) carry these hashes, checked in their own tests |
 
 ### M4 · Product search tool
 
@@ -369,7 +369,7 @@ How to read this section:
 
 ### M9 · Human approval flow and approver console
 
-**Track:** C (API) + D (UI) · **Priority:** P0 · **Estimate:** 6 h · **Depends on:** M7, M8 · **Due:** H24
+**Track:** C (API) + D (UI) · **Priority:** P0 · **Estimate:** 6 h · **Depends on:** M7, M8; 9.4 also needs the agent (M13) and the web app (M15) · **Due:** H24
 
 **Goal.** A human approves on their own device, in time for the cut-off, and the agent picks the result up on its own.
 
@@ -379,7 +379,7 @@ How to read this section:
 | 9.2 | The buyer UI and the console poll approval and order status every 2 s, which works through any tunnel; server-sent events are an optional extra | Both screens update within 2 s |
 | 9.3 | Phone-friendly approver console with its own login: pending list, plain-language reasons, approve or reject with a comment | Approving on a phone completes the order |
 | 9.4 | The agent resumes: the buyer UI sees the new status, calls `sendContextualUpdate` with the order id and status (silent context), then sends a short fixed nudge with `sendUserMessage`, because a contextual update alone does not trigger a reply; the agent calls `get_order` and announces the gateway's result | Aino confirms the order without being asked |
-| 9.5 | Approval only through the console under an approver session. The voice agent and the LLM cannot approve. | Covered by red-team tests (M19) |
+| 9.5 | Approval only through the console under an approver session. The voice agent and the LLM cannot approve. | A test calls the approve route with a buyer session and with a voice session token, and both get 403; the M19 red-team repeats it by voice |
 
 ### M10 · Audit trail and evidence
 
