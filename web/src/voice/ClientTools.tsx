@@ -5,8 +5,9 @@
 import { useEffect, useRef } from "react";
 import { useConversationClientTool } from "@elevenlabs/react";
 import { api, type ConfirmResponse } from "../api";
+import { refreshBasket } from "../cards/actions";
 import { confirmationAnswer } from "../cards/basket";
-import { onDisconnectEvent, showQuote, ui } from "./store";
+import { focusBasket, onDisconnectEvent, optionsFor, showQuote, ui } from "./store";
 
 const idOf = (params: Record<string, unknown>, key: string): string | null => {
   const v = params[key];
@@ -39,7 +40,15 @@ export function ClientTools() {
   useConversationClientTool("show_products", (params) => {
     const id = idOf(params, "offer_set_id");
     if (!id) return "error: offer_set_id is required";
-    ui.set({ offerSetId: id });
+    ui.set((s) => optionsFor(s, id, params.line_id)); // with a line_id the cards offer "Replace line N"
+    return "shown";
+  });
+  useConversationClientTool("show_basket", (params) => {
+    const id = idOf(params, "basket_id");
+    if (!id) return "error: basket_id is required";
+    const inFocus = ui.get().basketId === id;
+    ui.set((s) => focusBasket(s, id)); // a basket coming into focus is fetched by its card
+    if (inFocus) void refreshBasket(id); // the agent just changed it: show the gateway's latest answer
     return "shown";
   });
   useConversationClientTool("show_quote", (params) => {
