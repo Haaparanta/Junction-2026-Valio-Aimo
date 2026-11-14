@@ -17,11 +17,12 @@ The gateway decides every number: statuses and messages come from the priced lin
 data: they reach the line as need_text and raw_text, and no message quotes them.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import get_args
 
+from . import mandates
 from .basket import LOCKED, BasketService, LineDraft, summary, warnings_for
 from .contract import Confidence, ImportResponse, ImportRow, ImportRowStatus, LineSource, ListExtraction, Msg
 from .fmt import day_en, day_fi, ids_en, ids_fi, instant, to_helsinki
@@ -61,21 +62,25 @@ STATUS_WORDS: dict[ImportRowStatus, tuple[str, str, str]] = {  # after the count
 }
 
 
-def next_delivery_date(stubs: StubState, as_of: str, product_id: str | None) -> date:
+def next_delivery_date(
+    stubs: StubState, as_of: str, product_id: str | None, weekdays: Collection[int] | None = None
+) -> date:
     """The first date from the as-of day + 1 (at most DATE_SEARCH_DAYS ahead) that the pinned product can be
-    delivered on, before its cut-off; the as-of day + 1 without a product or when no such date is found."""
+    delivered on, before its cut-off, on a weekday the buyer's mandate allows (`weekdays`, Monday = 0; all days when
+    None); the first allowed day without a product, or when no such date is found."""
     first = to_helsinki(instant(as_of)).date() + timedelta(days=1)
+    days = [first + timedelta(days=k) for k in range(DATE_SEARCH_DAYS)]
+    allowed = [d for d in days if weekdays is None or d.weekday() in weekdays] or days
     p = PRODUCTS.get(product_id) if product_id else None
     if p is None:
-        return first
-    for k in range(DATE_SEARCH_DAYS):
-        d = first + timedelta(days=k)
+        return allowed[0]
+    for d in allowed:
         offer, why = stubs.price_product(p.id, 1.0, p.base_unit, d.isoformat(), as_of)
         if offer is not None or (why is not None and not UNDELIVERABLE & set(why.flags)):
             return d
         if why is None:  # not priced at all: no date will do better
             break
-    return first
+    return allowed[0]
 
 
 def _alternatives(name: str, product_id: str, entries: tuple[CatalogueEntry, ...]) -> list[str]:
@@ -97,7 +102,12 @@ def _amount(row: SheetRow) -> tuple[float | None, list[Msg]]:
 
 
 def _draft(
-    row: SheetRow, source: LineSource, confidence: Confidence | None, stubs: StubState, as_of: str
+    row: SheetRow,
+    source: LineSource,
+    confidence: Confidence | None,
+    stubs: StubState,
+    as_of: str,
+    weekdays: Collection[int] | None = None,
 ) -> tuple[LineDraft, list[Msg]]:
     """The row's draft and the notes for its message (the filled-in date, an amount out of range)."""
     entries = catalogue_entries()
@@ -110,7 +120,7 @@ def _draft(
     amount, notes = _amount(row)
     need_date = row.need_date
     if not need_date:
-        d = next_delivery_date(stubs, as_of, product_id)
+        d = next_delivery_date(stubs, as_of, product_id, weekdays)
         need_date = d.isoformat()
         notes.append(
             Msg(
@@ -182,6 +192,9 @@ def import_rows(
     the buyer's basket (404 otherwise); an ordered basket answers basket_locked and adds nothing; more lines than a
     basket holds raise 422."""
     confidences = confidences or {}
+    # A filled-in date falls on a weekday the buyer's mandate allows, so the date itself never triggers an approval.
+    mandate = mandates.for_buyer(buyer)
+    weekdays = set(mandate.allowed_delivery_weekdays) if mandate else None
     usable: list[tuple[SheetRow, LineDraft, list[Msg]]] = []
     report: list[ImportRow] = []
     for row in rows:
@@ -196,7 +209,7 @@ def import_rows(
                 )
             )
             continue
-        draft, notes = _draft(row, source, confidences.get(row.row_number), service.stubs, as_of)
+        draft, notes = _draft(row, source, confidences.get(row.row_number), service.stubs, as_of, weekdays)
         usable.append((row, draft, notes))
 
     added = service.add_lines(buyer, basket_id, [d for _, d, _ in usable], dedupe=True)
