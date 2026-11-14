@@ -3,8 +3,8 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import mcp_server
-from .api import session, tools, webhooks
+from . import mcp_server, signing
+from .api import session, tools, trust, webhooks
 from .db import Store
 from .llm import LLM, AnthropicLLM
 from .settings import Settings, get_settings
@@ -25,6 +25,7 @@ def create_app(
     app = FastAPI(title="Valio Aimo agent gateway", version="0.1.0", description=DESCRIPTION)
     app.dependency_overrides[get_settings] = lambda: settings
     app.state.store = Store(settings.db_path)
+    signing.configure(settings)  # the keys of quotes, receipts and mandates (PLAN M6.3, M7.3, M8.5)
     app.state.stubs = StubState()
     app.state.voice = voice or session.ElevenLabsVoice(settings)
     app.state.llm = llm or AnthropicLLM(settings)
@@ -36,6 +37,7 @@ def create_app(
     app.include_router(tools.router)
     app.include_router(session.router)
     app.include_router(webhooks.router)
+    app.include_router(trust.router)  # /.well-known/jwks.json, and in M10 the audit routes
     mcp_server.mount(app, settings)  # MCP at /mcp for external agents (PLAN M12), after the routers, before the web
     if settings.web_dist and (settings.web_dist / "index.html").is_file():
         # Production: the built buyer UI from the same origin (cookies, HTTPS for the microphone). Mounted last.

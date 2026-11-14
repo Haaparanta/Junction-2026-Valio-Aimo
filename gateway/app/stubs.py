@@ -47,6 +47,7 @@ from .contract import (
 )
 from .fmt import CENT, UNIT_EN, UNIT_FI, at_en, at_fi, day_en, day_fi, fi, helsinki_at, instant, money, num, quoted
 from .identity import Buyer
+from .signing import TYP_QUOTE, canonical, keys, quote_document, sha256_hex
 
 FOOD_VAT = Decimal("13.5")
 BaseUnit = Literal["L", "KG", "PCS"]
@@ -261,6 +262,79 @@ def sha(s: str) -> str:
 def vat_of(net: Decimal, rate: Decimal) -> Decimal:
     """VAT on a line's net total, rounded half-up to cents (F-06)."""
     return (net * rate / 100).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+# ---- quote evidence and validity (PLAN M6.2, M6.4; findings A-01, F-07) ------------------------------------
+
+API_TIME_NOW = "2026-11-14T01:16:59+0200"  # the recorded timeNow of the snapshot the stub rows come from (A-01)
+QUOTE_TTL = timedelta(minutes=15)  # a quoted price holds at most this long after issue
+NET_VALID_TO = date(2026, 12, 31)  # customer net prices seen end 2026-12-31 (A-12); validTo inclusive until Q-06
+
+
+def valid_to(p: P) -> date | None:
+    """The last delivery date the row's price holds for: net prices are time-boxed, list prices are not (F-07)."""
+    return NET_VALID_TO if p.net else None
+
+
+def quote_expiry(issued: datetime, lines: Iterable[tuple[str, str]]) -> datetime:
+    """expiresAt = min(cut-off, end of the validTo day, issue + TTL) over the (product_id, delivery_date) lines."""
+    times = [issued + QUOTE_TTL]
+    for product_id, delivery in lines:
+        p = PRODUCTS.get(product_id)
+        if p is None:
+            continue
+        if (ob := order_by(p, date.fromisoformat(delivery))) is not None:
+            times.append(ob)
+        if (vt := valid_to(p)) is not None:
+            times.append(helsinki_at(vt + timedelta(days=1), "00:00"))  # the end of the validTo day, Helsinki
+    return min(times)
+
+
+def stub_responses(lines: list[QuoteLine]) -> tuple[dict, dict]:
+    """The /price and /availability answers the quote's lines were read from, as the stub rows stand for them."""
+    rows = [(x, PRODUCTS[x.product_id]) for x in lines if x.product_id in PRODUCTS]
+    price = {
+        "timeNow": API_TIME_NOW,
+        "products": [
+            {
+                "productId": p.id,
+                "salesUnit": p.api_unit,
+                "catalogPrice": {"value": money(p.price)},
+                "netPriceFound": p.net,
+                "tax": {"taxRate": str(p.vat)},
+            }
+            for _, p in rows
+        ],
+    }
+    availability = {
+        "timeNow": API_TIME_NOW,
+        "products": [
+            {
+                "productId": p.id,
+                "requestedDate": x.delivery_date,
+                "logisticModel": p.logistics,
+                "closingTime": ob.isoformat() if (ob := order_by(p, date.fromisoformat(x.delivery_date))) else None,
+                "stock": p.stock,
+                "stockQty": p.stock_qty,
+            }
+            for x, p in rows
+        ],
+    }
+    return price, availability
+
+
+def stub_evidence(lines: list[QuoteLine]) -> Evidence:
+    """Which snapshot a quote came from (M6.2): the API's timeNow and the SHA-256 of each canonical response."""
+    return Evidence(
+        api_time_now=API_TIME_NOW,
+        response_sha256=[sha256_hex(canonical(r)) for r in stub_responses(lines)],
+        stub=True,
+    )
+
+
+def sign_quote(q: Quote) -> Quote:
+    """Set quote_jws: ES256 over the canonical quote without its jws field and confirmation state (M6.3)."""
+    return q.model_copy(update={"quote_jws": keys().quotes.sign(quote_document(q), TYP_QUOTE)})
 
 
 def invented_warnings(ids: Iterable[str | None]) -> list[str]:
@@ -734,33 +808,33 @@ class StubState:
                 line_net = p.price * qty
                 line_vat = vat_of(line_net, p.vat)
                 issued = datetime.fromisoformat(as_of)
+                line = QuoteLine(
+                    line_id=1,
+                    product_id=p.id,
+                    name_fi=p.name,
+                    api_unit=p.api_unit,
+                    qty=qty,
+                    unit_price_net=money(p.price),
+                    line_net=money(line_net),
+                    vat_rate=str(p.vat),
+                    line_vat=money(line_vat),
+                    line_gross=money(line_net + line_vat),
+                    delivery_date=o.delivery_date,
+                )
                 q = Quote(
                     quote_id=quote_id,
                     status="ready_for_complete",
                     buyer_id=buyer.buyer_id,
-                    lines=[
-                        QuoteLine(
-                            line_id=1,
-                            product_id=p.id,
-                            name_fi=p.name,
-                            api_unit=p.api_unit,
-                            qty=qty,
-                            unit_price_net=money(p.price),
-                            line_net=money(line_net),
-                            vat_rate=str(p.vat),
-                            line_vat=money(line_vat),
-                            line_gross=money(line_net + line_vat),
-                            delivery_date=o.delivery_date,
-                        )
-                    ],
+                    lines=[line],
                     total_net=money(line_net),
                     total_vat=money(line_vat),
                     total_gross=money(line_net + line_vat),
                     delivery_date=o.delivery_date,
                     issued_at=issued.isoformat(),
-                    expires_at=(issued + timedelta(minutes=15)).isoformat(),
-                    evidence=Evidence(api_time_now="2026-11-14T01:16:59+0200", stub=True),
+                    expires_at=quote_expiry(issued, [(p.id, o.delivery_date)]).isoformat(),
+                    evidence=stub_evidence([line]),
                 )
+                q = sign_quote(q)
                 self.quotes[quote_id] = q
         return QuoteResponse(
             status=q.status,
@@ -776,7 +850,7 @@ class StubState:
                 f"(EUR {q.total_gross} incl. VAT). The price is fixed until {q.expires_at[11:16]}. Please confirm on "
                 "screen.",
             ),
-            warnings=["stub: quote is not signed yet (M6)", *invented_warnings([p.id])],
+            warnings=invented_warnings([p.id]),
         )
 
     def create_basket_quote(self, buyer: Buyer, basket: Basket, as_of: str) -> Quote:
@@ -784,7 +858,8 @@ class StubState:
 
         Each line is priced as its basket line was: VAT per line on the net total at the row's rate, rounded
         half-up (F-06). Totals are the sums of the lines; delivery_date is the earliest line date; expires_at is
-        the earliest of issue + 15 min and every line's order-by time.
+        the earliest of issue + 15 min, every line's order-by time and the end of each price's validTo day (F-07).
+        The quote is signed (M6.3) and carries the snapshot it was priced from (M6.2).
         """
         priced = [line for line in basket.lines if line.status == "priced" and line.offer is not None]
         if not priced:
@@ -818,7 +893,12 @@ class StubState:
                         )
                     )
                 issued = instant(as_of)
-                expires = min([issued + timedelta(minutes=15), *(instant(x.offer.order_by) for x in priced if x.offer)])
+                expires = min(
+                    [
+                        quote_expiry(issued, [(x.product_id, x.delivery_date) for x in lines]),
+                        *(instant(x.offer.order_by) for x in priced if x.offer),
+                    ]
+                )
                 q = Quote(
                     quote_id=quote_id,
                     status="ready_for_complete",
@@ -832,8 +912,9 @@ class StubState:
                     basket_version=basket.version,
                     issued_at=issued.isoformat(),
                     expires_at=expires.isoformat(),
-                    evidence=Evidence(api_time_now="2026-11-14T01:16:59+0200", stub=True),
+                    evidence=stub_evidence(lines),
                 )
+                q = sign_quote(q)
                 self.quotes[quote_id] = q
         return q
 

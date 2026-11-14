@@ -664,7 +664,7 @@ class BasketService:
             total_gross=q.total_gross,
             expires_at=q.expires_at,
             message_for_user=quote_text(q),
-            warnings=["stub: quote is not signed yet (M6)", *invented_warnings(x.product_id for x in q.lines)],
+            warnings=invented_warnings(x.product_id for x in q.lines),
         )
 
     def mark_quoted(self, buyer: Buyer, basket_id: str, quote_id: str) -> Basket:
