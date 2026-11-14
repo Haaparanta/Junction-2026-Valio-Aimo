@@ -1,14 +1,20 @@
 /**
- * The basket in focus (docs/basket-plan.md M23): one row per line, the gateway's totals and counts, and one quote
- * for all. Every number is the gateway's; edits go to the gateway and the card renders its answer.
+ * The basket in focus (docs/basket-plan.md M23, M24a): one row per line, the gateway's totals and counts, and one
+ * quote for all. Every field is a control: the product opens its details, the amount and the date edit in place,
+ * × removes with Undo. Edits go to the gateway and the card renders its answer; it computes no number itself.
  */
 import { useEffect, useState } from "react";
-import { api, errorText, eur, helsinki, type Basket, type BasketLine } from "../api";
+import { api, errorText, eur, helsinki, type Basket, type BasketLine, type Offer } from "../api";
 import { BASKET_TOOLS } from "../cow/mood";
 import { personaName } from "../persona";
 import { focusBasket, receiveBasket, showQuote, showToast, ui, useUi } from "../voice/store";
-import { applyBasket, hasBasket, quoteBasketNow } from "./actions";
-import { countsText, flagLabel, flagNote, formatAmount, lineDomId, needsAttention, statusLabel } from "./basket";
+import { applyBasket, hasBasket, quoteBasketNow, restoreLine } from "./actions";
+import {
+  buildPatch, chipFlags, countsText, flagLabel, flagNote, formatAmount, lineDomId, needsAttention, refusal, statusLabel,
+  type LineChange,
+} from "./basket";
+import { DateEditor, QtyEditor, type PatchFn } from "./Editors";
+import { ProductButton } from "./ProductDetails";
 
 /** What the gateway says the line orders: units needed (offer.qty × offer.api_unit) and the overshoot. */
 function GatewayUnits({ l }: { l: BasketLine }) {
@@ -34,10 +40,18 @@ function GatewayDate({ l }: { l: BasketLine }) {
   );
 }
 
-function ProductCell({ l }: { l: BasketLine }) {
+function ProductCell({ l, onUse }: { l: BasketLine; onUse?: (o: Offer) => Promise<string | null> }) {
+  const name = l.name_fi ?? l.need_text;
+  const clickable = l.product_id !== null || l.alternatives.length > 0;
   return (
     <>
-      <strong className="pname">{l.name_fi ?? l.need_text}</strong>
+      {clickable ? (
+        <ProductButton label={l.product_id ? name : `Choose: ${name}`} className="pname" productId={l.product_id}
+                       offer={l.offer} flags={l.flags} flagNotes={l.flag_notes} alternatives={l.alternatives}
+                       onUse={onUse} />
+      ) : (
+        <strong className="pname">{name}</strong>
+      )}
       {l.name_fi && l.need_text && <span className="need">for “{l.need_text}”</span>}
     </>
   );
@@ -45,28 +59,35 @@ function ProductCell({ l }: { l: BasketLine }) {
 
 type RowProps = {
   l: BasketLine; readOnly: boolean; open: boolean; removing: boolean; onRemove: (l: BasketLine) => void;
+  onPatch: (l: BasketLine) => PatchFn;
 };
 
-function LineRow({ l, readOnly, open, removing, onRemove }: RowProps) {
+function LineRow({ l, readOnly, open, removing, onRemove, onPatch }: RowProps) {
   const attention = needsAttention(l.status);
+  const patch = onPatch(l);
+  const use = readOnly ? undefined : (o: Offer) => patch({ offer_id: o.offer_id });
   return (
     <tr id={lineDomId(l.line_id)} role="row" tabIndex={-1}
         className={`line${attention ? " attention" : ""}${open ? " open" : ""}`}>
       <td role="cell" className="no"><span className="sr-only">Line </span>{l.line_id}</td>
       <td role="cell" className="prod">
-        <ProductCell l={l} />
+        <ProductCell l={l} onUse={use} />
         <ul className="flags" aria-label={`Status and flags of line ${l.line_id}`}>
           <li className={`st st-${l.status}`}>{statusLabel(l.status)}</li>
-          {l.flags.map((f) => <li key={f} title={flagNote(l, f) || undefined}>{flagLabel(f)}</li>)}
+          {chipFlags(l).map((f) => <li key={f} title={flagNote(l, f) || undefined}>{flagLabel(f)}</li>)}
         </ul>
         {attention && l.status !== "cutoff_passed" && l.message.en && <p className="line-msg">{l.message.en}</p>}
       </td>
       <td role="cell" className="amt" data-label="Amount">
-        <span className="qty-read">{l.amount === null ? "—" : `${formatAmount(l.amount)} ${l.unit ?? ""}`}</span>
+        {readOnly ? (
+          <span className="qty-read">{l.amount === null ? "—" : `${formatAmount(l.amount)} ${l.unit ?? ""}`}</span>
+        ) : (
+          <QtyEditor l={l} onPatch={patch} />
+        )}
         <GatewayUnits l={l} />
       </td>
       <td role="cell" className="date" data-label="Delivery">
-        <span className="date-read">{l.need_date}</span>
+        {readOnly ? <span className="date-read">{l.need_date}</span> : <DateEditor l={l} onPatch={patch} />}
         <GatewayDate l={l} />
       </td>
       <td role="cell" className="num" data-label="Line total excl. VAT">
@@ -147,12 +168,33 @@ export function BasketCard() {
   const ordered = b.status === "ordered";
   const open = (l: BasketLine) => !!alert && alert.lines.includes(l.line_id) && needsAttention(l.status);
 
+  /** PATCH one line with all four fields; the gateway prices it again and the row shows its answer. */
+  const patchLine = (l: BasketLine): PatchFn => async (change: LineChange) => {
+    try {
+      const r = await api.patchLine(b.basket_id, l.line_id, buildPatch(change));
+      applyBasket(r);
+      return refusal(r);
+    } catch (e) {
+      return errorText(e);
+    }
+  };
+
   const remove = async (l: BasketLine) => {
     setRemoving(l.line_id);
     try {
       const r = await api.removeLine(b.basket_id, l.line_id);
-      applyBasket(r);
-      ui.set(showToast(r.reason_code ? r.message_for_user.en : `Removed line ${l.line_id}.`));
+      const refused = refusal(r);
+      if (refused) {
+        applyBasket(r);
+        ui.set(showToast(refused));
+        return;
+      }
+      // One update: the row goes and the toast with Undo comes, so focus can move to Undo.
+      const basketOf = b.basket_id;
+      ui.set((s) => ({
+        ...(hasBasket(r) ? receiveBasket(s, r.basket) : {}),
+        ...showToast(`Removed line ${l.line_id}.`, { label: "Undo", run: () => void restoreLine(basketOf, l.line_id) }),
+      }));
     } catch (e) {
       ui.set(showToast(`Could not remove line ${l.line_id}: ${errorText(e)}`));
     } finally {
@@ -184,11 +226,15 @@ export function BasketCard() {
       <h2 id="basket-title" tabIndex={-1}>
         Your basket · {b.lines.length === 1 ? "1 line" : `${b.lines.length} lines`}
       </h2>
-      {ordered && (
+      {ordered ? (
         <div className="locked" role="note">
           <p><strong>Ordered.</strong> This basket is read-only now. Start a new basket to order more.</p>
           <button type="button" onClick={startNew}>Start a new basket</button>
         </div>
+      ) : (
+        b.lines.length > 0 && (
+          <p className="hint">Click a product for its details, or change an amount or a date: the gateway prices the line again.</p>
+        )
       )}
       {b.lines.length === 0 ? (
         <p className="muted">The basket is empty. Tell {name} what you need, or add an option card.</p>
@@ -207,7 +253,7 @@ export function BasketCard() {
           <tbody role="rowgroup">
             {b.lines.map((l) => (
               <LineRow key={l.line_id} l={l} readOnly={ordered} open={open(l)} removing={removing === l.line_id}
-                       onRemove={(x) => void remove(x)} />
+                       onRemove={(x) => void remove(x)} onPatch={patchLine} />
             ))}
           </tbody>
         </table>

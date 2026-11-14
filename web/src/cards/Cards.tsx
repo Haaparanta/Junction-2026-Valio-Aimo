@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useConversationControls } from "@elevenlabs/react";
-import { api, errorText, eur, helsinki, type Offer, type OrderResponse } from "../api";
+import { api, errorText, eur, helsinki, type Offer, type OrderResponse, type QuoteLine } from "../api";
 import { personaName } from "../persona";
 import { answerConfirmation } from "../voice/ClientTools";
 import { focusBasket, quoteLoaded, showToast, ui, useUi } from "../voice/store";
 import { applyBasket, hasBasket, quoteBasketNow, refreshBasket } from "./actions";
 import { flagLabel, orderRequestMessage, quoteIsStale } from "./basket";
+import { ProductButton } from "./ProductDetails";
 import { useFetch } from "./useFetch";
 
 const TIER_TEXT = { best: "Best", better: "Better", good: "Good", other: "Also on time" } as const;
@@ -24,7 +25,7 @@ function OfferCard({ o, chosen, onSelect, action }: CardProps) {
         </button>
         <span className="pid">{o.product_id}</span>
       </header>
-      <h3>{o.name_fi}</h3>
+      <h3><ProductButton label={o.name_fi} productId={o.product_id} offer={o} /></h3>
       <p className="big">{eur(o.total_net)} <small>excl. VAT</small></p>
       <p>{o.qty} × {o.api_unit} · {o.price_per_base_unit} €/{o.base_unit.toLowerCase()}</p>
       <p>Delivery {o.delivery_date} · order by {helsinki(o.order_by)}</p>
@@ -124,7 +125,10 @@ export function OfferCards() {
           <ul className="more">
             {more.map((o) => (
               <li key={o.offer_id} className={chosen === o.offer_id ? "chosen" : ""}>
-                <span><strong>{o.name_fi}</strong> · {o.qty} × {o.api_unit} · {eur(o.total_net)} excl. VAT</span>
+                <span>
+                  <ProductButton label={o.name_fi} productId={o.product_id} offer={o} /> · {o.qty} × {o.api_unit} ·{" "}
+                  {eur(o.total_net)} excl. VAT
+                </span>
                 {action(o, true)}
               </li>
             ))}
@@ -138,6 +142,17 @@ export function OfferCards() {
         </details>
       )}
     </section>
+  );
+}
+
+/** A quote line's price as the gateway fixed it: unit price × quantity, VAT and gross. */
+function QuoteLineFacts({ l }: { l: QuoteLine }) {
+  return (
+    <dl className="facts">
+      <div><dt>In this quote</dt><dd>{l.qty} × {l.api_unit} at {eur(l.unit_price_net)} = {eur(l.line_net)} excl. VAT</dd></div>
+      <div><dt>VAT {l.vat_rate} %</dt><dd>{eur(l.line_vat)} · {eur(l.line_gross)} incl. VAT</dd></div>
+      <div><dt>Delivery</dt><dd>{l.delivery_date}</dd></div>
+    </dl>
   );
 }
 
@@ -259,17 +274,23 @@ export function QuoteCard({ onAsk }: { onAsk: (text: string) => void }) {
       )}
       <table>
         <tbody>
-          {q.lines.map((l) => (
-            <tr key={l.line_id}>
-              <td className="qty">{l.qty} × {l.api_unit}</td>
-              <td>
-                {q.basket_id && <span className="sub">Line {l.line_id}</span>}
-                {l.name_fi}
-                <span className="sub">Delivery {l.delivery_date}</span>
-              </td>
-              <td className="num">{eur(l.line_net)}</td>
-            </tr>
-          ))}
+          {q.lines.map((l) => {
+            // The basket line this quote line priced, while the quote still holds: its offer and flags.
+            const bl = !stale && q.basket_id && basket?.basket_id === q.basket_id
+              ? basket.lines.find((x) => x.line_id === l.line_id && x.product_id === l.product_id) : undefined;
+            return (
+              <tr key={l.line_id}>
+                <td className="qty">{l.qty} × {l.api_unit}</td>
+                <td>
+                  {q.basket_id && <span className="sub">Line {l.line_id}</span>}
+                  <ProductButton label={l.name_fi} productId={l.product_id} offer={bl?.offer ?? null} flags={bl?.flags ?? []}
+                                 flagNotes={bl?.flag_notes ?? []} extra={<QuoteLineFacts l={l} />} />
+                  <span className="sub">Delivery {l.delivery_date}</span>
+                </td>
+                <td className="num">{eur(l.line_net)}</td>
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr><td colSpan={2}>Total excl. VAT</td><td className="num">{eur(q.total_net)}</td></tr>

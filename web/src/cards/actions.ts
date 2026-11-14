@@ -1,6 +1,6 @@
 /** Basket actions shared by the cards: each sends one gateway call and puts the gateway's answer in the store. */
-import { api, type BasketQuoteResponse, type BasketResponse } from "../api";
-import { receiveBasket, showQuote, ui } from "../voice/store";
+import { api, errorText, type BasketQuoteResponse, type BasketResponse } from "../api";
+import { receiveBasket, showQuote, showToast, ui } from "../voice/store";
 import { lineDomId } from "./basket";
 
 /** Focus an element as soon as it exists: cards render after their own fetch. */
@@ -20,6 +20,20 @@ export const hasBasket = (r: Partial<BasketResponse> | null | undefined): r is B
 /** Put a basket answer for the basket in focus into the store. */
 export function applyBasket(r: Partial<BasketResponse> | null | undefined): void {
   if (hasBasket(r)) ui.set((s) => receiveBasket(s, r.basket));
+}
+
+/** Undo for a removed line (the toast's action): POST …/restore, then focus the line that came back. */
+export async function restoreLine(basketId: string, lineId: number): Promise<BasketResponse | null> {
+  try {
+    const r = await api.restoreLine(basketId, lineId);
+    applyBasket(r);
+    ui.set(showToast(r.reason_code ? r.message_for_user.en : `Line ${lineId} is back.`));
+    if (!r.reason_code) focusSoon(lineDomId(lineId));
+    return r;
+  } catch (e) {
+    ui.set(showToast(`Could not bring line ${lineId} back: ${errorText(e)}`));
+    return null;
+  }
 }
 
 /** Fetch the basket again, after a quote or an order changed it on the gateway. */

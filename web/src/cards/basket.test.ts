@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { basket, line, quote } from "../testing/fixtures";
 import {
-  confirmationAnswer, countsText, flagLabel, flagNote, formatAmount, needsAttention, orderRequestMessage, quoteIsStale,
-  statusLabel,
+  allergenLabel, buildPatch, chipFlags, claimLabel, confirmationAnswer, countsText, flagLabel, flagNote, formatAmount, isIsoDate,
+  MAX_AMOUNT, needsAttention, orderRequestMessage, parseAmount, quoteIsStale, refusal, statusLabel, stepAmount,
 } from "./basket";
 
 describe("status and flag labels", () => {
@@ -25,6 +25,11 @@ describe("status and flag labels", () => {
     expect(flagLabel("UNIT_MISMATCH")).toBe("unit differs from catalogue");
     expect(flagLabel("PRICE_NOT_VALID_FOR_DELIVERY_DATE")).toBe("price not valid for that date");
     expect(flagLabel("NEW_FLAG")).toBe("new flag");
+  });
+  it("leaves out the flag chip that only repeats the status chip", () => {
+    expect(chipFlags(line({ status: "cutoff_passed", flags: ["CUTOFF_PASSED", "VARIANT"] }))).toEqual(["VARIANT"]);
+    expect(chipFlags(line({ status: "not_deliverable", flags: ["NOT_DELIVERABLE"] }))).toEqual([]);
+    expect(chipFlags(line({ status: "priced", flags: ["CUTOFF_PASSED"] }))).toEqual(["CUTOFF_PASSED"]);
   });
   it("takes a flag's explanation from the gateway's flag_notes", () => {
     const l = line({ flags: ["VARIANT"], flag_notes: [{ code: "VARIANT", text: { fi: "Muunnos", en: "A milk drink, not milk." } }] });
@@ -76,5 +81,68 @@ describe("amounts as the buyer types them", () => {
     expect(formatAmount(2.5)).toBe("2,5");
     expect(formatAmount(1000)).toBe("1000");
     expect(formatAmount(null)).toBe("");
+  });
+  it("reads a decimal comma or point, and spaces between thousands", () => {
+    expect(parseAmount("2,5")).toBe(2.5);
+    expect(parseAmount(" 2.5 ")).toBe(2.5);
+    expect(parseAmount("1 000")).toBe(1000);
+    expect(parseAmount("1 000,25")).toBe(1000.25);
+    expect(parseAmount(",5")).toBe(0.5);
+    expect(parseAmount("20")).toBe(20);
+    expect(parseAmount("20,")).toBe(20);
+  });
+  it("refuses what is not one positive amount within the gateway's limit", () => {
+    for (const bad of ["", "abc", "0", "0,0", "-3", "1,000,5", "1.2.3", "2 kg", "1e3", "1000001"]) {
+      expect(parseAmount(bad)).toBeNull();
+    }
+    expect(parseAmount(String(MAX_AMOUNT))).toBe(MAX_AMOUNT);
+  });
+  it("steps the typed amount, and −/+ retrace each other", () => {
+    expect(stepAmount(20, 1)).toBe(21);
+    expect(stepAmount(20, -1)).toBe(19);
+    expect(stepAmount(1000, 1)).toBe(1100);
+    expect(stepAmount(1000, -1)).toBe(990);
+    expect(stepAmount(990, 1)).toBe(1000);
+    expect(stepAmount(100, -1)).toBe(99);
+    expect(stepAmount(2.5, 1)).toBe(3.5);
+    expect(stepAmount(1, -1)).toBeNull(); // never 0
+    expect(stepAmount(0.5, -1)).toBeNull();
+    expect(stepAmount(null, 1)).toBe(1);
+    expect(stepAmount(null, -1)).toBeNull();
+    expect(stepAmount(MAX_AMOUNT, 1)).toBeNull();
+  });
+});
+
+describe("PATCH bodies", () => {
+  it("always carry all four fields, with 0 and empty meaning keep", () => {
+    expect(buildPatch({ amount: 20 })).toEqual({ amount: 20, unit: "", need_date: "", offer_id: "" });
+    expect(buildPatch({ need_date: "2026-11-17" })).toEqual({ amount: 0, unit: "", need_date: "2026-11-17", offer_id: "" });
+    expect(buildPatch({ offer_id: "OS-1:464076" })).toEqual({ amount: 0, unit: "", need_date: "", offer_id: "OS-1:464076" });
+    expect(buildPatch({ amount: 5, unit: "KG" })).toEqual({ amount: 5, unit: "KG", need_date: "", offer_id: "" });
+    expect(Object.keys(buildPatch({}))).toEqual(["amount", "unit", "need_date", "offer_id"]);
+  });
+  it("only sends a full date", () => {
+    expect(isIsoDate("2026-11-17")).toBe(true);
+    expect(isIsoDate("0002-11-17")).toBe(false); // half-typed year in a date input
+    expect(isIsoDate("17.11.2026")).toBe(false);
+    expect(isIsoDate("")).toBe(false);
+  });
+  it("tells a refused change from one the gateway made", () => {
+    const msg = (en: string) => ({ fi: "", en });
+    expect(refusal({ reason_code: null, message_for_user: msg("") })).toBeNull();
+    expect(refusal({ reason_code: "cutoff_passed", message_for_user: msg("Cut-off passed.") })).toBeNull();
+    expect(refusal({ reason_code: "basket_locked", message_for_user: msg("Already ordered.") })).toBe("Already ordered.");
+    expect(refusal({ reason_code: "unknown_id", message_for_user: msg("") })).toMatch(/alternatives/);
+    expect(refusal({ reason_code: "something_new", message_for_user: null })).toMatch(/something_new/);
+  });
+});
+
+describe("product facts in plain words", () => {
+  it("labels claims and GS1 allergen codes, keeping unknown codes", () => {
+    expect(claimLabel("FREE_FROM_LACTOSE")).toBe("lactose-free");
+    expect(claimLabel("NEW_CLAIM")).toBe("new claim");
+    expect(allergenLabel("AM")).toBe("milk");
+    expect(allergenLabel("GO")).toBe("oats");
+    expect(allergenLabel("XX")).toBe("XX");
   });
 });
