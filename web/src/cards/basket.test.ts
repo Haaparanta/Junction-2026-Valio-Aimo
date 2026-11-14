@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { basket, line, quote } from "../testing/fixtures";
+import { basket, line, offer, quote } from "../testing/fixtures";
 import {
   allergenLabel, buildPatch, chipFlags, claimLabel, confirmationAnswer, countsText, flagLabel, flagNote, formatAmount, isIsoDate,
   MAX_AMOUNT, needsAttention, orderRequestMessage, parseAmount, quoteIsStale, refusal, statusLabel, stepAmount,
+  chipInfo, nextStep, parseReason, priceBreakdown, unitView,
 } from "./basket";
 
 describe("status and flag labels", () => {
@@ -55,6 +56,75 @@ describe("stale quotes", () => {
     expect(quoteIsStale(q, null)).toBe(false);
     expect(quoteIsStale(q, basket({ quote_id: "Q-2", quote_stale: true }))).toBe(false); // that flag is about Q-2
     expect(quoteIsStale(quote({ basket_id: null }), basket({ quote_stale: true }))).toBe(false);
+  });
+  it("is stale when the basket's version is no longer the one the quote priced", () => {
+    const q = quote({ quote_id: "Q-1", basket_id: "B-0A1B2C3D4E", basket_version: 3 });
+    expect(quoteIsStale(q, basket({ version: 4, quote_id: "Q-1", quote_stale: false }))).toBe(true);
+    expect(quoteIsStale(q, basket({ version: 3, quote_id: "Q-1", quote_stale: false }))).toBe(false);
+    expect(quoteIsStale(q, basket({ version: 4, quote_id: "Q-2" }))).toBe(true); // an older quote of a changed basket
+    expect(quoteIsStale({ ...q, basket_version: null }, basket({ version: 9, quote_id: "Q-1" }))).toBe(false);
+    expect(quoteIsStale(q, basket({ basket_id: "B-FFFFFFFFFF", version: 9 }))).toBe(false);
+  });
+});
+
+describe("the price popover", () => {
+  it("passes the gateway's numbers through unchanged", () => {
+    const l = line({ offer: offer({ qty: 40, api_unit: "ST", unit_price_net: "25.25", total_net: "1010.00" }),
+                     vat_rate: "14", line_vat: "141.40", line_gross: "1151.40" });
+    expect(priceBreakdown(l)).toEqual({
+      qty: 40, apiUnit: "ST", unitPriceNet: "25.25", totalNet: "1010.00", vatRate: "14", vat: "141.40", gross: "1151.40",
+      perBase: "1.01", baseUnit: "L",
+    });
+  });
+  it("has nothing to show until the gateway priced the line", () => {
+    expect(priceBreakdown(line({ status: "needs_choice" }))).toBeNull();
+    expect(priceBreakdown(line({ offer: null }))).toBeNull();
+    expect(priceBreakdown(line({ line_gross: null }))).toBeNull();
+  });
+});
+
+describe("chip popovers", () => {
+  const msg = (en: string) => ({ fi: en, en });
+  it("the status chip explains with the line's message and gives the next step", () => {
+    const l = line({ status: "needs_choice", message: msg("3 products match."), alternatives: [offer(), offer(), offer()] });
+    expect(chipInfo(l, "status")).toEqual({
+      title: "Choose a product", explanation: "3 products match.",
+      next: "Open the product name and choose one of the 3 matches.",
+    });
+    expect(chipInfo(line(), "status").next).toBe("");
+  });
+  it("a flag chip explains with the gateway's flag note; the next step only when the line needs the buyer", () => {
+    const notes = [{ code: "PARTIAL_STOCK", text: msg("Only 600 in stock.") }];
+    expect(chipInfo(line({ flags: ["PARTIAL_STOCK"], flag_notes: notes }), "PARTIAL_STOCK")).toEqual({
+      title: "partial stock", explanation: "Only 600 in stock.", next: "",
+    });
+    const open = line({ status: "cutoff_passed", flags: ["PARTIAL_STOCK"], flag_notes: notes, message: msg("Too late.") });
+    expect(chipInfo(open, "PARTIAL_STOCK").next).toBe("Too late.");
+    expect(chipInfo(line({ flags: ["VARIANT"] }), "VARIANT").explanation).toMatch(/no explanation/);
+  });
+  it("names a next step for every status that needs the buyer", () => {
+    for (const status of ["needs_amount", "unmatched", "not_deliverable", "cutoff_passed"] as const) {
+      expect(nextStep({ status, alternatives: [] })).not.toBe("");
+    }
+    expect(nextStep({ status: "needs_choice", alternatives: [offer()] })).toMatch(/one of the match\./);
+  });
+});
+
+describe("the unit popover", () => {
+  it("shows the API unit next to the catalogue unit, with the UNIT_MISMATCH note", () => {
+    const l = line({ flags: ["UNIT_MISMATCH"], flag_notes: [{ code: "UNIT_MISMATCH", text: { fi: "", en: "Sold per box." } }] });
+    expect(unitView(l, "PAK")).toEqual({ apiUnit: "ST", catalogueUnit: "PAK", mismatch: true, note: "Sold per box." });
+    expect(unitView(line(), null)).toEqual({ apiUnit: "ST", catalogueUnit: null, mismatch: false, note: "" });
+  });
+});
+
+describe("approval reasons", () => {
+  it("splits the code from the detail and names the code", () => {
+    expect(parseReason("OVER_ORDER_CAP: EUR 1010.00 is above the 500.00 cap")).toEqual({
+      code: "OVER_ORDER_CAP", title: "Over your order cap", detail: "EUR 1010.00 is above the 500.00 cap",
+    });
+    expect(parseReason("NEW_RULE")).toEqual({ code: "NEW_RULE", title: "new rule", detail: "" });
+    expect(parseReason("a plain sentence")).toEqual({ code: "", title: "a plain sentence", detail: "" });
   });
 });
 

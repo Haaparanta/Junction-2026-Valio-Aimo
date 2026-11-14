@@ -12,23 +12,11 @@ import { focusBasket, receiveBasket, showQuote, showToast, ui, useUi } from "../
 import { useAgentNote } from "../voice/useAgentNote";
 import { applyBasket, hasBasket, quoteBasketNow, restoreLine } from "./actions";
 import {
-  buildPatch, chipFlags, countsText, flagLabel, flagNote, formatAmount, lineDomId, needsAttention, refusal, statusLabel,
-  type LineChange,
+  buildPatch, chipFlags, countsText, formatAmount, lineDomId, needsAttention, refusal, type LineChange,
 } from "./basket";
 import { DateEditor, QtyEditor, type PatchFn } from "./Editors";
+import { ChipPopover, PricePopover, UnitPopover } from "./LinePopovers";
 import { ProductButton } from "./ProductDetails";
-
-/** What the gateway says the line orders: units needed (offer.qty × offer.api_unit) and the overshoot. */
-function GatewayUnits({ l }: { l: BasketLine }) {
-  if (!l.offer) return null;
-  const over = l.overshoot !== null && Number(l.overshoot) > 0;
-  return (
-    <small className="units">
-      = {l.offer.qty} × {l.offer.api_unit}
-      {over && <> · {l.overshoot} {l.unit ?? ""} over</>}
-    </small>
-  );
-}
 
 /** The cut-off for the chosen offer, or the gateway's message when the cut-off has passed. */
 function GatewayDate({ l }: { l: BasketLine }) {
@@ -75,8 +63,8 @@ function LineRow({ l, readOnly, open, removing, onRemove, onPatch }: RowProps) {
       <td role="cell" className="prod">
         <ProductCell l={l} onUse={use} />
         <ul className="flags" aria-label={`Status and flags of line ${l.line_id}`}>
-          <li className={`st st-${l.status}`}>{statusLabel(l.status)}</li>
-          {chipFlags(l).map((f) => <li key={f} title={flagNote(l, f) || undefined}>{flagLabel(f)}</li>)}
+          <li className={`st st-${l.status}`}><ChipPopover l={l} code="status" /></li>
+          {chipFlags(l).map((f) => <li key={f}><ChipPopover l={l} code={f} /></li>)}
         </ul>
         {attention && l.status !== "cutoff_passed" && l.message.en && <p className="line-msg">{l.message.en}</p>}
       </td>
@@ -86,14 +74,14 @@ function LineRow({ l, readOnly, open, removing, onRemove, onPatch }: RowProps) {
         ) : (
           <QtyEditor l={l} onPatch={patch} />
         )}
-        <GatewayUnits l={l} />
+        <UnitPopover l={l} />
       </td>
       <td role="cell" className="date" data-label="Delivery">
         {readOnly ? <span className="date-read">{l.need_date}</span> : <DateEditor l={l} onPatch={patch} />}
         <GatewayDate l={l} />
       </td>
       <td role="cell" className="num" data-label="Line total excl. VAT">
-        {l.status === "priced" && l.offer ? eur(l.offer.total_net) : <span aria-label="not priced">—</span>}
+        <PricePopover l={l} />
       </td>
       {!readOnly && (
         <td role="cell" className="rm">

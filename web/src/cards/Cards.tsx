@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useConversationControls } from "@elevenlabs/react";
 import { api, errorText, eur, helsinki, type Offer, type OrderResponse, type QuoteLine } from "../api";
 import { personaName } from "../persona";
@@ -6,8 +6,8 @@ import { answerConfirmation } from "../voice/ClientTools";
 import { basketNote, quoteNote } from "../voice/notes";
 import { focusBasket, quoteLoaded, showToast, ui, useUi } from "../voice/store";
 import { useAgentNote } from "../voice/useAgentNote";
-import { applyBasket, hasBasket, quoteBasketNow, refreshBasket } from "./actions";
-import { flagLabel, orderRequestMessage, quoteIsStale, refusal } from "./basket";
+import { applyBasket, goToBasketLine, hasBasket, quoteBasketNow, refreshBasket } from "./actions";
+import { flagLabel, orderRequestMessage, parseReason, quoteIsStale, refusal } from "./basket";
 import { ProductButton } from "./ProductDetails";
 import { useFetch } from "./useFetch";
 
@@ -291,7 +291,12 @@ export function QuoteCard({ onAsk }: { onAsk: (text: string) => void }) {
               <tr key={l.line_id}>
                 <td className="qty">{l.qty} × {l.api_unit}</td>
                 <td>
-                  {q.basket_id && <span className="sub">Line {l.line_id}</span>}
+                  {q.basket_id && (
+                    <button type="button" className="link sub line-jump" aria-label={`Line ${l.line_id}: show it in the basket`}
+                            onClick={() => goToBasketLine(q.basket_id, l.line_id)}>
+                      Line {l.line_id} ↓
+                    </button>
+                  )}
                   <ProductButton label={l.name_fi} productId={l.product_id} offer={bl?.offer ?? null} flags={bl?.flags ?? []}
                                  flagNotes={bl?.flag_notes ?? []} extra={<QuoteLineFacts l={l} />} />
                   <span className="sub">Delivery {l.delivery_date}</span>
@@ -360,17 +365,33 @@ export function QuoteCard({ onAsk }: { onAsk: (text: string) => void }) {
   );
 }
 
-const REASON_TEXT: Record<string, string> = {
-  OVER_ORDER_CAP: "Over your order cap", OVER_BUDGET: "Over the weekly budget", SUBSTITUTION: "Includes a substitute",
-  NET_ABOVE_LIST: "Contract price above list price", UNIT_MISMATCH: "Unit differs from the catalogue",
-};
-
-/** "OVER_ORDER_CAP: EUR 1010.00 is above ..." -> a plain title, the detail, and the code as a small tag. */
+/**
+ * One approval reason, "OVER_ORDER_CAP: EUR 1010.00 is above …": a button with the plain title that expands to the
+ * gateway's detail and the code (M24.8). Enter or Space toggles it, Escape folds it again.
+ */
 function Reason({ text }: { text: string }) {
-  const [code = "", detail = ""] = text.split(/:\s*/, 2);
-  const title = REASON_TEXT[code];
-  if (!title) return <>{text}</>;
-  return <><strong>{title}</strong> {detail} <code>{code}</code></>;
+  const [open, setOpen] = useState(false);
+  const id = `reason-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const r = parseReason(text);
+  if (!r.code) return <>{text}</>;
+  return (
+    <>
+      <button type="button" className="link reason-btn" aria-expanded={open} aria-controls={id}
+              onClick={() => setOpen((o) => !o)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && open) {
+                  e.stopPropagation();
+                  setOpen(false);
+                }
+              }}>
+        {open ? "▾" : "▸"} {r.title}
+      </button>
+      <div id={id} className="reason-detail" hidden={!open}>
+        {r.detail && <p>{r.detail}</p>}
+        <p className="muted">Code <code>{r.code}</code></p>
+      </div>
+    </>
+  );
 }
 
 /** Polls the approval every 2 s; on a change, tells the agent silently and nudges it (PLAN M9.4). */

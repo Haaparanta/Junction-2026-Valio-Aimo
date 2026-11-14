@@ -49,14 +49,88 @@ export function countsText(counts: Record<string, number>): string {
 }
 
 /**
- * A basket quote is stale when the gateway says its basket changed after it (Basket.quote_stale for that quote).
- * A single-offer quote has no basket and is never stale.
+ * A basket quote is stale when its basket changed after it: the gateway flags it (Basket.quote_stale for that
+ * quote), or the basket's version is no longer the one the quote priced (Quote.basket_version). Only the quote's own
+ * basket can tell; a single-offer quote has no basket and is never stale.
  */
 export function quoteIsStale(
-  q: Pick<Quote, "quote_id" | "basket_id">,
-  b: Pick<Basket, "basket_id" | "quote_id" | "quote_stale"> | null,
+  q: Pick<Quote, "quote_id" | "basket_id"> & Partial<Pick<Quote, "basket_version">>,
+  b: Pick<Basket, "basket_id" | "quote_id" | "quote_stale"> & Partial<Pick<Basket, "version">> | null,
 ): boolean {
-  return !!q.basket_id && !!b && b.basket_id === q.basket_id && b.quote_id === q.quote_id && b.quote_stale;
+  if (!q.basket_id || !b || b.basket_id !== q.basket_id) return false;
+  if (b.quote_id === q.quote_id && b.quote_stale) return true;
+  const priced = q.basket_version;
+  return typeof priced === "number" && typeof b.version === "number" && b.version !== priced;
+}
+
+/** A line's price as the gateway sent it, for the price popover; null while the line is not priced. */
+export type PriceBreakdown = {
+  qty: number; apiUnit: string; unitPriceNet: string; totalNet: string; vatRate: string; vat: string; gross: string;
+  perBase: string; baseUnit: string;
+};
+export function priceBreakdown(l: Pick<BasketLine, "status" | "offer" | "vat_rate" | "line_vat" | "line_gross">):
+  PriceBreakdown | null {
+  const o = l.offer;
+  if (l.status !== "priced" || !o || l.vat_rate === null || l.line_vat === null || l.line_gross === null) return null;
+  return {
+    qty: o.qty, apiUnit: o.api_unit, unitPriceNet: o.unit_price_net, totalNet: o.total_net, vatRate: l.vat_rate,
+    vat: l.line_vat, gross: l.line_gross, perBase: o.price_per_base_unit, baseUnit: o.base_unit,
+  };
+}
+
+/** What a status chip's popover says to do next, by status; "" when nothing is needed. */
+export function nextStep(l: Pick<BasketLine, "status" | "alternatives">): string {
+  switch (l.status) {
+    case "needs_choice": {
+      const n = l.alternatives.length;
+      return n > 0
+        ? `Open the product name and choose one of the ${n === 1 ? "match" : `${n} matches`}.`
+        : "Open the product name and choose a product.";
+    }
+    case "needs_amount": return "Type the amount and choose its unit in the Amount field.";
+    case "unmatched": return "Remove the line, or say or type what you meant with other words.";
+    case "not_deliverable": return "Pick another delivery date, or open the product name and choose another product.";
+    case "cutoff_passed": return "Pick a later delivery date.";
+    default: return "";
+  }
+}
+
+/** One chip's popover: its title, the gateway's explanation, and the next step. code "status" is the status chip. */
+export type ChipInfo = { title: string; explanation: string; next: string };
+export function chipInfo(
+  l: Pick<BasketLine, "status" | "flag_notes" | "message" | "alternatives">, code: string,
+): ChipInfo {
+  const attention = needsAttention(l.status);
+  if (code === "status") {
+    return { title: statusLabel(l.status), explanation: l.message.en, next: nextStep(l) };
+  }
+  return {
+    title: flagLabel(code),
+    explanation: flagNote(l, code) || "The gateway sent no explanation for this flag.",
+    next: attention ? l.message.en || nextStep(l) : "",
+  };
+}
+
+/** The unit popover: the unit the gateway orders in next to the catalogue's sales unit, and UNIT_MISMATCH's note. */
+export type UnitView = { apiUnit: string | null; catalogueUnit: string | null; mismatch: boolean; note: string };
+export function unitView(
+  l: Pick<BasketLine, "offer" | "flags" | "flag_notes">, salesUnit: string | null,
+): UnitView {
+  const mismatch = l.flags.includes("UNIT_MISMATCH");
+  return { apiUnit: l.offer?.api_unit ?? null, catalogueUnit: salesUnit, mismatch, note: mismatch ? flagNote(l, "UNIT_MISMATCH") : "" };
+}
+
+/** An approval reason, "OVER_ORDER_CAP: EUR 1010.00 is above …": a plain title, the detail and the code. */
+export type ReasonView = { code: string; title: string; detail: string };
+export const REASON_TEXT: Record<string, string> = {
+  OVER_ORDER_CAP: "Over your order cap", OVER_BUDGET: "Over the weekly budget", SUBSTITUTION: "Includes a substitute",
+  NET_ABOVE_LIST: "Contract price above list price", UNIT_MISMATCH: "Unit differs from the catalogue",
+};
+export function parseReason(text: string): ReasonView {
+  const m = /^([A-Z][A-Z0-9_]{1,60})(?::\s*([\s\S]*))?$/.exec(text.trim());
+  if (!m) return { code: "", title: text, detail: "" };
+  const code = m[1] ?? "";
+  return { code, title: REASON_TEXT[code] ?? code.replace(/_/g, " ").toLowerCase(), detail: (m[2] ?? "").trim() };
 }
 
 /** The DOM id of a basket line's row, for focus and scrolling. */

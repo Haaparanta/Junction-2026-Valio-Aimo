@@ -1,7 +1,8 @@
 /** Basket actions shared by the cards: each sends one gateway call and puts the gateway's answer in the store. */
 import { api, errorText, type BasketQuoteResponse, type BasketResponse } from "../api";
-import { receiveBasket, showQuote, showToast, ui } from "../voice/store";
+import { focusBasket, receiveBasket, showQuote, showToast, ui } from "../voice/store";
 import { lineDomId } from "./basket";
+import { showBasketLine } from "./highlight";
 
 /** Focus an element as soon as it exists: cards render after their own fetch. */
 export function focusSoon(id: string, tries = 90): void {
@@ -62,4 +63,15 @@ export async function quoteBasketNow(basketId: string): Promise<BasketQuoteRespo
     void refreshBasket(basketId);
   }
   return r;
+}
+
+/**
+ * Scroll to basket line `lineId` and highlight it (a quote line or an import summary row). The basket comes into
+ * focus first when it is another one; a line that is not on screen any more gets a toast.
+ */
+export function goToBasketLine(basketId: string | null, lineId: number): void {
+  if (basketId && ui.get().basketId !== basketId) ui.set((s) => focusBasket(s, basketId));
+  void showBasketLine(lineId, {
+    onMissing: () => ui.set(showToast(`Line ${lineId} is not in the basket on screen any more.`)),
+  });
 }
