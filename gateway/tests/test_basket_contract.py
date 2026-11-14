@@ -117,9 +117,9 @@ def test_dish_breakdown_rejects_other_units_and_codes():
 
 def test_list_extraction_allows_unread_amounts_but_no_extra_fields():
     item = {"raw_text": "voi", "name": "voi", "quantity": None, "unit": None, "note": "", "confidence": "low"}
-    x = ListExtraction.model_validate({"items": [item], "handwritten": True, "unreadable": []})
+    x = ListExtraction.model_validate({"items": [item], "handwritten": True, "unreadable": [], "need_date": None})
     assert x.items[0].quantity is None
-    extra = {"items": [{**item, "product_id": "464076"}], "handwritten": True, "unreadable": []}
+    extra = {"items": [{**item, "product_id": "464076"}], "handwritten": True, "unreadable": [], "need_date": None}
     with pytest.raises(ValidationError):
         ListExtraction.model_validate(extra)
 

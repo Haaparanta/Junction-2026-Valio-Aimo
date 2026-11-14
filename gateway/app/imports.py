@@ -6,7 +6,8 @@ one transaction. Then it reports every row: its status, a message {fi, en} and t
 
 * A row with no product id, GTIN or name is 'invalid' and becomes no line. Any other problem (an unreadable amount
   or date) still gives a line, which then waits for the buyer (needs_amount, or the filled-in date).
-* exact or one: the product is pinned. several: the candidates wait for the buyer's choice (needs_choice, or
+* exact or one: the product is pinned, and its other close names are kept as candidates, which basket.py prices
+  as the line's alternatives (the buyer can swap). several: the candidates wait for the buyer's choice (needs_choice, or
   needs_amount while the amount is missing). none: an unmatched line that keeps the row's raw text.
 * A missing date becomes the next deliverable date (next_delivery_date) and the row's message says so.
 * A row identical to a line already in the basket, or to an earlier row, reports that line and says so (the
@@ -25,7 +26,7 @@ from .basket import LOCKED, BasketService, LineDraft, summary, warnings_for
 from .contract import Confidence, ImportResponse, ImportRow, ImportRowStatus, LineSource, ListExtraction, Msg
 from .fmt import day_en, day_fi, ids_en, ids_fi, instant, to_helsinki
 from .identity import Buyer
-from .match import catalogue_entries, match_item
+from .match import CatalogueEntry, catalogue_entries, close_names, match_item
 from .sheets import P_NO_ITEM, SheetRow
 from .stubs import PRODUCTS, StubState
 
@@ -77,6 +78,15 @@ def next_delivery_date(stubs: StubState, as_of: str, product_id: str | None) -> 
     return first
 
 
+def _alternatives(name: str, product_id: str, entries: tuple[CatalogueEntry, ...]) -> list[str]:
+    """A pinned line's other close names, so the buyer can swap the product: from the row's name, or from the
+    product's own catalogue name when the row has none close (an exact id or GTIN)."""
+    found = close_names(name, entries, exclude=product_id)
+    if not found and product_id in PRODUCTS:
+        found = close_names(PRODUCTS[product_id].name, entries, exclude=product_id)
+    return [c.product_id for c in found]
+
+
 def _amount(row: SheetRow) -> tuple[float | None, list[Msg]]:
     if row.amount is None:
         return None, []
@@ -90,9 +100,13 @@ def _draft(
     row: SheetRow, source: LineSource, confidence: Confidence | None, stubs: StubState, as_of: str
 ) -> tuple[LineDraft, list[Msg]]:
     """The row's draft and the notes for its message (the filled-in date, an amount out of range)."""
-    m = match_item(row.product_id, row.gtin, row.name, entries=catalogue_entries())
+    entries = catalogue_entries()
+    m = match_item(row.product_id, row.gtin, row.name, entries=entries)
     product_id = m.candidates[0].product_id if m.kind in ("exact", "one") else None
-    candidates = [c.product_id for c in m.candidates] if m.kind == "several" else []
+    if product_id is not None:
+        candidates = _alternatives(row.name, product_id, entries)
+    else:
+        candidates = [c.product_id for c in m.candidates] if m.kind == "several" else []
     amount, notes = _amount(row)
     need_date = row.need_date
     if not need_date:

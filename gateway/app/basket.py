@@ -274,6 +274,15 @@ def need_key(d: LineDraft) -> str:
     return json.dumps(key, sort_keys=True, ensure_ascii=False)
 
 
+def _pin(d: LineDraft, product_id: str) -> dict[str, Any]:
+    """The draft update that pins product_id. An imported line keeps the product it had among its candidates, so
+    it stays an alternative and the buyer can swap back."""
+    update: dict[str, Any] = {"product_id": product_id}
+    if d.need is None and d.product_id and d.product_id != product_id and d.product_id not in d.candidates:
+        update["candidates"] = [d.product_id, *d.candidates]
+    return update
+
+
 def to_line(line_id: int, d: LineDraft, s: Snapshot) -> BasketLine:
     return BasketLine(
         line_id=line_id,
@@ -563,7 +572,7 @@ class BasketService:
                 alt = next((o for o in s.alternatives if o.offer_id == patch.offer_id), None)
                 if alt is None:
                     return self._changed(c, buyer, basket_id, line_id, "unknown_offer")
-                update["product_id"] = alt.product_id
+                update |= _pin(d, alt.product_id)
             if patch.amount:
                 update["amount"] = patch.amount
             if patch.unit:
@@ -578,7 +587,7 @@ class BasketService:
             b, d, s, _ = self._target(c, buyer, basket_id, line_id)
             if b["status"] == "ordered":
                 return self._changed(c, buyer, basket_id, line_id, "locked")
-            return self._reprice(c, buyer, basket_id, line_id, d, s, {"product_id": product_id})
+            return self._reprice(c, buyer, basket_id, line_id, d, s, _pin(d, product_id))
 
     def remove_line(self, buyer: Buyer, basket_id: str, line_id: int) -> Changed:
         """A soft delete: the line keeps its id and draft, so restore_line can bring it back."""

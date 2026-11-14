@@ -177,6 +177,17 @@ export function buildPatch(c: LineChange): BasketLinePatch {
   return { amount: c.amount ?? 0, unit: c.unit ?? "", need_date: c.need_date ?? "", offer_id: c.offer_id ?? "" };
 }
 
+/**
+ * The change a unit pick makes: the new unit with the current amount (the typed one when it reads, else the line's).
+ * Null when there is no amount yet: the buyer types one and that commit carries the unit.
+ */
+export function unitChange(l: Pick<BasketLine, "amount" | "unit">, unit: Unit, typed: number | null): LineChange | null {
+  const amount = typed ?? l.amount;
+  if (amount === null || amount <= 0) return null;
+  if (unit === l.unit && amount === l.amount) return null;
+  return { amount, unit };
+}
+
 /** Reason codes that come with a change the gateway still made: the row shows the line's own status for them. */
 const APPLIED_CODES = new Set(["cutoff_passed", "not_deliverable", "out_of_stock", "price_changed"]);
 const REFUSED_TEXT: Record<string, string> = {

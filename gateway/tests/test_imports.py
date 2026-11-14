@@ -141,6 +141,19 @@ def test_a_single_close_name_waits_for_the_buyer(chef):
     assert r.status_code == 200 and r.json()["line"]["status"] == "priced"
 
 
+def test_an_exact_id_line_has_alternatives_to_swap_to(chef):
+    res = imported(chef, HEADER + "464076;;7,5;kg;16.11.2026;\n")
+    row = res["rows"][0]
+    butter = line(res, row["line_id"])
+    assert (row["status"], butter["product_id"]) == ("priced", "464076")
+    assert butter["alternatives"] and "464076" not in {o["product_id"] for o in butter["alternatives"]}
+    alt = butter["alternatives"][0]
+    r = chef.patch(f"/v1/baskets/{res['basket_id']}/lines/{row['line_id']}", json={"offer_id": alt["offer_id"]})
+    swapped = r.json()["line"]
+    assert r.status_code == 200 and (swapped["status"], swapped["product_id"]) == ("priced", alt["product_id"])
+    assert "464076" in {o["product_id"] for o in swapped["alternatives"]}  # and back again
+
+
 def test_a_row_already_in_the_basket_reports_that_line(chef):
     first = imported(chef, CSV)
     again = imported(

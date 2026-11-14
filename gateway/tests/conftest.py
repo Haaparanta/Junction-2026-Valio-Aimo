@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 from app.contract import DishBreakdown, DishInput, ListExtraction
 from app.main import create_app
@@ -70,12 +72,12 @@ class FakeLLM:
         dish: DishBreakdown | None = None,
         error: Exception | None = None,
     ) -> None:
-        self.extraction = extraction or ListExtraction(items=[], handwritten=False, unreadable=[])
+        self.extraction = extraction or ListExtraction(items=[], handwritten=False, unreadable=[], need_date=None)
         self.dish = dish
         self.error = error
         self.calls: list[tuple[str, object]] = []
 
-    def read_list(self, image: bytes, media_type: str) -> ListExtraction:
+    def read_list(self, image: bytes, media_type: str, today: date) -> ListExtraction:
         self.calls.append(("read_list", media_type))
         if self.error is not None:
             raise self.error

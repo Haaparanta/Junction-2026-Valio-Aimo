@@ -162,6 +162,29 @@ def match_item(
     return MatchResult(by_name.kind, by_name.via, by_name.candidates, _join([*notes, by_name.note]))
 
 
+def close_names(
+    name: str, entries: Iterable[CatalogueEntry] | None = None, *, exclude: str = ""
+) -> tuple[Candidate, ...]:
+    """The catalogue names close to name (score CLOSE and up), best first, at most MAX_CANDIDATES, without the
+    product `exclude`: the alternatives of a line whose product is pinned. Empty when the name has no words."""
+    entries = _unique(catalogue_entries() if entries is None else entries)
+    words, _ = _normalise(name)
+    head = _head(name)
+    if not head:
+        return ()
+    close = [(e, s) for e, s, _ in _close(words, head, entries) if e.product_id != exclude]
+    return _result("several", "name", close, []).candidates
+
+
+def _close(
+    words: tuple[str, ...], head: str, entries: tuple[CatalogueEntry, ...]
+) -> list[tuple[CatalogueEntry, float, bool]]:
+    """Entries scoring CLOSE and up, best first, with whether they hold every query word."""
+    scored = [(e, *_score(words, head, e.name)) for e in entries]
+    scored.sort(key=lambda t: (-t[1], -_closeness(words, t[0].name)))  # stable: ties keep the catalogue order
+    return [(e, s, complete) for e, s, complete in scored if s >= CLOSE]
+
+
 def _match_name(name: str, entries: tuple[CatalogueEntry, ...]) -> MatchResult:
     words, packs = _normalise(name)
     head = _head(name)
@@ -170,9 +193,7 @@ def _match_name(name: str, entries: tuple[CatalogueEntry, ...]) -> MatchResult:
     same_name = [e for e in entries if _same_name(e.name, words, packs)]
     if len(same_name) == 1:
         return _result("one", "name", [(same_name[0], 100.0)], [])
-    scored = [(e, *_score(words, head, e.name)) for e in entries]
-    scored.sort(key=lambda t: (-t[1], -_closeness(words, t[0].name)))  # stable: ties keep the catalogue order
-    close = [(e, s, complete) for e, s, complete in scored if s >= CLOSE]
+    close = _close(words, head, entries)
     if not close:
         return _result("none", "name", [], ["no catalogue name is close"])
     best, top, top_complete = close[0]

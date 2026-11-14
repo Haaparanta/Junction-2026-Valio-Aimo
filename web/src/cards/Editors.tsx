@@ -4,14 +4,17 @@
  */
 import { useEffect, useId, useRef, useState } from "react";
 import type { BasketLine, Unit } from "../api";
-import { formatAmount, isIsoDate, parseAmount, stepAmount, type LineChange } from "./basket";
+import { formatAmount, isIsoDate, parseAmount, stepAmount, unitChange, type LineChange } from "./basket";
 
 /** Sends one change; resolves to the error to show, or null when the gateway took it. */
 export type PatchFn = (change: LineChange) => Promise<string | null>;
 
 const UNITS: Unit[] = ["L", "KG", "PCS"];
 
-/** −/+ and a number field (a decimal comma is fine), the unit next to it; commits on Enter, blur or −/+. */
+/**
+ * −/+, a number field (a decimal comma is fine) and the unit (L, KG or PCS); commits on Enter, blur, −/+ or a unit
+ * pick. A unit pick sends the current amount with it; with no amount yet it waits for the buyer to type one.
+ */
 export function QtyEditor({ l, onPatch }: { l: BasketLine; onPatch: PatchFn }) {
   const [draft, setDraft] = useState(formatAmount(l.amount));
   const [unit, setUnit] = useState<"" | Unit>(l.unit ?? "");
@@ -30,26 +33,12 @@ export function QtyEditor({ l, onPatch }: { l: BasketLine; onPatch: PatchFn }) {
   }, [l]);
 
   const needsUnit = l.unit === null; // a photo or sheet row whose unit could not be read (needs_amount)
-  const commit = async (amount: number | null) => {
-    if (busy.current) return;
-    if (amount === null) {
-      setErr("Type an amount above 0, for example 2,5.");
-      return;
-    }
-    if (needsUnit && unit === "") {
-      setErr("Choose a unit too.");
-      return;
-    }
-    if (amount === l.amount && !needsUnit) {
-      setErr(null);
-      setDraft(formatAmount(l.amount));
-      return;
-    }
+  const send = async (change: LineChange) => {
     busy.current = true;
     setPending(true);
     setErr(null);
-    setDraft(formatAmount(amount));
-    const e = await onPatch({ amount, unit: needsUnit ? unit : "" });
+    if (change.amount) setDraft(formatAmount(change.amount));
+    const e = await onPatch(change);
     busy.current = false;
     setPending(false);
     if (e) {
@@ -58,6 +47,31 @@ export function QtyEditor({ l, onPatch }: { l: BasketLine; onPatch: PatchFn }) {
     }
     setDraft(formatAmount(latest.current.amount)); // the gateway's answer
     setUnit(latest.current.unit ?? "");
+  };
+  const commit = async (amount: number | null) => {
+    if (busy.current) return;
+    if (amount === null) {
+      setErr("Type an amount above 0, for example 2,5.");
+      return;
+    }
+    if (unit === "") {
+      setErr("Choose a unit too.");
+      return;
+    }
+    const unitChanged = unit !== l.unit; // a pick whose PATCH failed, or one waiting for an amount
+    if (amount === l.amount && !unitChanged) {
+      setErr(null);
+      setDraft(formatAmount(l.amount));
+      return;
+    }
+    await send({ amount, unit: unitChanged ? unit : "" });
+  };
+  const pickUnit = (u: "" | Unit) => {
+    setUnit(u);
+    setErr(null);
+    if (u === "" || busy.current) return;
+    const change = unitChange(l, u, parseAmount(draft));
+    if (change) void send(change);
   };
 
   const base = parseAmount(draft) ?? l.amount;
@@ -70,7 +84,7 @@ export function QtyEditor({ l, onPatch }: { l: BasketLine; onPatch: PatchFn }) {
       setErr(null);
       return;
     }
-    if (draft.trim() !== formatAmount(l.amount) || (needsUnit && unit !== "")) void commit(parseAmount(draft));
+    if (draft.trim() !== formatAmount(l.amount) || (unit !== "" && unit !== l.unit)) void commit(parseAmount(draft));
   };
 
   return (
@@ -80,7 +94,7 @@ export function QtyEditor({ l, onPatch }: { l: BasketLine; onPatch: PatchFn }) {
         <button type="button" className="step" aria-label={`Less, line ${l.line_id}`} disabled={pending || less === null}
                 onClick={() => void commit(less)}>−</button>
         <input inputMode="decimal" autoComplete="off" value={draft} readOnly={pending} placeholder="Amount"
-               aria-label={`Amount of line ${l.line_id}${l.unit ? `, in ${l.unit}` : ""}`} aria-invalid={err ? true : undefined}
+               aria-label={`Amount of line ${l.line_id}`} aria-invalid={err ? true : undefined}
                aria-describedby={err ? errId : undefined}
                onChange={(e) => {
                  setDraft(e.target.value);
@@ -90,21 +104,18 @@ export function QtyEditor({ l, onPatch }: { l: BasketLine; onPatch: PatchFn }) {
                  if (e.key === "Enter") {
                    e.preventDefault();
                    void commit(parseAmount(draft));
-                 } else if (e.key === "Escape" && draft !== formatAmount(l.amount)) {
+                 } else if (e.key === "Escape" && (draft !== formatAmount(l.amount) || unit !== (l.unit ?? ""))) {
                    e.stopPropagation();
                    setDraft(formatAmount(l.amount));
+                   setUnit(l.unit ?? "");
                    setErr(null);
                  }
                }} />
-        {needsUnit ? (
-          <select aria-label={`Unit of line ${l.line_id}`} value={unit} disabled={pending}
-                  onChange={(e) => setUnit(e.target.value as "" | Unit)}>
-            <option value="">unit</option>
-            {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
-        ) : (
-          <span className="unit" aria-hidden="true">{l.unit}</span>
-        )}
+        <select aria-label={`Unit of line ${l.line_id}`} value={unit} disabled={pending}
+                onChange={(e) => pickUnit(e.target.value as "" | Unit)}>
+          {(needsUnit || unit === "") && <option value="">unit</option>}
+          {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+        </select>
         <button type="button" className="step" aria-label={`More, line ${l.line_id}`} disabled={pending || more === null}
                 onClick={() => void commit(more)}>+</button>
       </div>

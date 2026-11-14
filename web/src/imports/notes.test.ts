@@ -48,6 +48,7 @@ describe("the note after a photo import", () => {
     items: [item("maito 20 l", "high"), item("voi 5 kg", "high"), item("servetit 500 kpl", "medium")],
     handwritten: true,
     unreadable: ["the last line", "a margin note"],
+    need_date: null,
   };
 
   it("says it came from a photo, how the list was written and how much could not be read", () => {
@@ -63,7 +64,7 @@ describe("the note after a photo import", () => {
   });
 
   it("says when nothing could be read", () => {
-    const nothing = { items: [], handwritten: false, unreadable: ["the whole image"] };
+    const nothing = { items: [], handwritten: false, unreadable: ["the whole image"], need_date: null };
     expect(photoNote(importResponse([], {}, [], { extraction: nothing }))).toBe(
       "Buyer sent a photo of a list, but no list lines could be read; 1 part could not be read; nothing was added to basket B-0A1B2C3D4E.",
     );
@@ -140,7 +141,7 @@ describe("notes carry gateway fields only", () => {
       { row_number: 3, status: "invalid", line_id: null, raw_text: `${BAD} cell`, message: bad },
       { row_number: 4, status: "priced", line_id: 2, raw_text: `${BAD} row`, message: bad },
     ];
-    const extraction = { items: [item(`${BAD} read`, "low")], handwritten: true, unreadable: [`${BAD} smudge`] };
+    const extraction = { items: [item(`${BAD} read`, "low")], handwritten: true, unreadable: [`${BAD} smudge`], need_date: null };
     const sheet = importResponse(rows, { unmatched: 1, invalid: 1, priced: 1 }, [tainted(1, "unmatched"), tainted(2)], {
       message_for_user: bad, warnings: [BAD],
     });

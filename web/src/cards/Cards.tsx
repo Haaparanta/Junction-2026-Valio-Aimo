@@ -290,7 +290,7 @@ export function QuoteCard({ onAsk }: { onAsk: (text: string) => void }) {
             return (
               <tr key={l.line_id}>
                 <td className="qty">{l.qty} × {l.api_unit}</td>
-                <td>
+                <td className="prod">
                   {q.basket_id && (
                     <button type="button" className="link sub line-jump" aria-label={`Line ${l.line_id}: show it in the basket`}
                             onClick={() => goToBasketLine(q.basket_id, l.line_id)}>
