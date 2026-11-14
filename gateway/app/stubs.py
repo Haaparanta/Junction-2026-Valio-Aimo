@@ -408,12 +408,17 @@ class StubState:
         self.orders: dict[str, Order] = {}
         self.approvals: dict[str, Approval] = {}
         self.offers: dict[str, Offer] = {}
+        self.offer_sets: dict[str, OffersResponse] = {}
 
     def get_offers(self, req: OffersRequest, as_of: str) -> OffersResponse:
         res = offers(req, as_of)
         with self.lock:
             self.offers.update({o.offer_id: o for o in res.options})
+            self.offer_sets[res.offer_set_id] = res
         return res
+
+    def get_offer_set(self, offer_set_id: str) -> OffersResponse | None:
+        return self.offer_sets.get(offer_set_id)
 
     def create_quote(self, buyer: Buyer, offer_id: str, as_of: str) -> QuoteResponse | None:
         o = self.offers.get(offer_id)

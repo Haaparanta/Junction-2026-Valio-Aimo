@@ -1,0 +1,5 @@
+packages:
+  - web
+minimumReleaseAgeExclude:
+  - '@elevenlabs/client@1.36.1'
+  - '@elevenlabs/react@1.22.1'

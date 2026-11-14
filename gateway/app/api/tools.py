@@ -127,6 +127,15 @@ def get_offers(body: OffersRequest, caller: CallerDep, stubs: StateDep, settings
     return stubs.get_offers(body, settings.as_of)
 
 
+@router.get("/offers/{offer_set_id}", tags=["ui"])
+def get_offer_set(offer_set_id: str, caller: CallerDep, stubs: StateDep) -> OffersResponse:
+    """The buyer UI renders option cards by id (client tools pass ids only)."""
+    res = stubs.get_offer_set(offer_set_id)
+    if res is None:
+        raise not_found("offer set")
+    return res
+
+
 @router.post(
     "/substitutes",
     operation_id="find_substitutes",

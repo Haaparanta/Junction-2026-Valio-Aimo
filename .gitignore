@@ -15,3 +15,5 @@ dist/
 agent/.env*
 !.env.example
 *.db-*
+web/tsconfig.tsbuildinfo
+*.tsbuildinfo

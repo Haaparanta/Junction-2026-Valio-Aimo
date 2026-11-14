@@ -25,6 +25,7 @@ def test_headline_flow_over_voice_tools(chef):
     offers = chef.post("/v1/offers", json=NEED, headers=h).json()
     assert offers["status"] == "ok"
     best = offers["options"][0]
+    assert chef.get(f"/v1/offers/{offers['offer_set_id']}").json()["options"][0]["offer_id"] == best["offer_id"]
     assert (best["product_id"], best["qty"], best["total_net"], best["tier"]) == ("464306", 1000, "1010.00", "best")
     assert "VARIANT" not in {f for o in offers["options"] for f in o["flags"]}  # coffee milk only with consent
     assert {n["product_id"] for n in offers["not_offered"] if "CUTOFF_PASSED" in n["flags"]} >= {"463038"}
