@@ -42,24 +42,25 @@ def fetch(source: str, cookie: str | None = None) -> dict:
     return json.loads(Path(source).read_text(encoding="utf-8"))
 
 
-def keyset(jwks: dict) -> KeySet:
+def keyset(jwks: dict, typ: str) -> KeySet:
+    """The P-256 keys that may sign `typ` (the gateway's JWKS names it in each key's `typ` member)."""
     keys = []
     for k in jwks.get("keys", []):
-        if k.get("kty") == "EC" and k.get("crv") == "P-256":
+        if k.get("kty") == "EC" and k.get("crv") == "P-256" and typ in k.get("typ", [typ]):
             public = {n: k[n] for n in ("kty", "crv", "x", "y")}
             keys.append(ECKey.import_key({**public, "kid": k.get("kid") or ECKey.import_key(public).thumbprint()}))
     return KeySet(keys)
 
 
-def check(token: str, keys: KeySet, typ: str) -> tuple[dict, bytes]:
-    obj = jws.deserialize_compact(token, keys, algorithms=["ES256"])  # any other alg is refused
+def check(token: str, jwks: dict, typ: str) -> tuple[dict, bytes]:
+    obj = jws.deserialize_compact(token, keyset(jwks, typ), algorithms=["ES256"])  # any other alg is refused
     headers = obj.headers()
     if headers.get("typ") != typ:
         raise ValueError(f"typ is {headers.get('typ')!r}, expected {typ!r}")
     return headers, obj.payload
 
 
-def verify_quote(quote: dict, keys: KeySet) -> str:
+def verify_quote(quote: dict, keys: dict) -> str:
     token = quote.get("quote_jws")
     if not token:
         raise ValueError("the quote has no quote_jws")
@@ -70,7 +71,7 @@ def verify_quote(quote: dict, keys: KeySet) -> str:
     return f"quote {quote.get('quote_id')} verifies: EUR {quote.get('total_net')} excl. VAT, kid {headers['kid']}"
 
 
-def verify_receipt(order: dict, keys: KeySet) -> str:
+def verify_receipt(order: dict, keys: dict) -> str:
     token = order.get("receipt_jws")
     if not token:
         raise ValueError(f"order {order.get('order_id')} has no receipt_jws (status {order.get('status')})")
@@ -97,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
             jwks_source = f"{u.scheme}://{u.netloc}/.well-known/jwks.json"
         else:
             jwks_source = "http://localhost:8000/.well-known/jwks.json"
-        keys = keyset(fetch(jwks_source))
+        keys = fetch(jwks_source)
     except (OSError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

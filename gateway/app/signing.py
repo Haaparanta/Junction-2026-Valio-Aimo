@@ -6,7 +6,8 @@
   bytes. Money stays a decimal string; no floats are ever signed.
 * `kid` is the key's RFC 7638 JWK thumbprint; `typ` names what is signed (quote, receipt, mandate).
 * Two keys: the gateway key signs quotes and order receipts; the organisation admin key signs the mandates. Both
-  public keys are served at /.well-known/jwks.json.
+  public keys are served at /.well-known/jwks.json, each with a `typ` member (non-standard, ignored by other JWK
+  libraries) naming what it may sign, so a verifier never takes a mandate key's signature on a quote or receipt.
 
 Keys come from the settings (a PEM or a private JWK in SIGNING_KEY / ORG_ADMIN_KEY) or from files in
 signing_key_dir; in development a missing key is generated there on first start (the folder gets its own .gitignore)
@@ -67,15 +68,18 @@ def quote_document(quote: BaseModel) -> dict:
 @dataclass(frozen=True)
 class Signer:
     key: ECKey
+    typs: tuple[str, ...] = ()  # what this key may sign (the JWKS `typ` member)
 
     @property
     def kid(self) -> str:
         return self.key.thumbprint()
 
     def public_jwk(self) -> dict:
-        return {**self.key.as_dict(private=False), "kid": self.kid, "use": "sig", "alg": ALG}
+        return {**self.key.as_dict(private=False), "kid": self.kid, "use": "sig", "alg": ALG, "typ": list(self.typs)}
 
     def sign(self, doc: Any, typ: str) -> str:
+        if self.typs and typ not in self.typs:
+            raise ValueError(f"this key does not sign {typ}")
         return jws.serialize_compact({"alg": ALG, "kid": self.kid, "typ": typ}, canonical(doc), self.key, ALGORITHMS)
 
 
@@ -87,15 +91,14 @@ class Keyring:
     def jwks(self) -> dict:
         return {"keys": [self.quotes.public_jwk(), self.admin.public_jwk()]}
 
-    def public_keyset(self) -> KeySet:
-        return keyset(self.jwks())
 
-
-def keyset(jwks: dict) -> KeySet:
-    """Public keys only: a private member in a JWKS is never used to verify."""
+def keyset(jwks: dict, typ: str | None = None) -> KeySet:
+    """The P-256 public keys of a JWKS (a private member is never used), only those that may sign `typ`."""
     keys = []
     for k in jwks.get("keys", []):
         if not isinstance(k, dict) or k.get("kty") != "EC" or k.get("crv") != "P-256":
+            continue
+        if typ is not None and typ not in k.get("typ", [typ]):
             continue
         public = {n: k[n] for n in ("kty", "crv", "x", "y") if n in k}
         keys.append(ECKey.import_key({**public, "kid": k.get("kid") or ECKey.import_key(public).thumbprint()}))
@@ -105,7 +108,7 @@ def keyset(jwks: dict) -> KeySet:
 def verify(token: str, keys: KeySet | dict, typ: str, expected: Any = None) -> dict:
     """The verified payload of `token`. Raises SignatureInvalid on any other algorithm, an unknown kid, a bad
     signature, another `typ`, or (with `expected`) a payload that is not exactly canonical(expected)."""
-    ks = keys if isinstance(keys, KeySet) else keyset(keys)
+    ks = keys if isinstance(keys, KeySet) else keyset(keys, typ)
     try:
         obj = jws.deserialize_compact(token, ks, algorithms=ALGORITHMS)
     except (JoseError, ValueError, TypeError, KeyError) as e:
@@ -165,7 +168,7 @@ def _load(quote_value: str | None, admin_value: str | None, directory: str) -> K
     admin = _import(admin_value) if admin_value else _from_file_or_new(d / ADMIN_KEY_FILE, "org admin")
     if quotes.thumbprint() == admin.thumbprint():
         raise ValueError("the gateway key and the org admin key must differ")
-    ring = Keyring(Signer(quotes), Signer(admin))
+    ring = Keyring(Signer(quotes, (TYP_QUOTE, TYP_RECEIPT)), Signer(admin, (TYP_MANDATE,)))
     log.info("signing keys: gateway kid %s, org admin kid %s", ring.quotes.kid, ring.admin.kid)
     return ring
 

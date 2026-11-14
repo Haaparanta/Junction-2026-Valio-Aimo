@@ -3,7 +3,13 @@
 A mandate is data: the seeds live in mandates.json and are checked against the Mandate model on load, whose JSON Schema
 is committed as mandate.schema.json (a test keeps the two in step). The mandate always comes from the authenticated
 caller (identity.Buyer.mandate_id, set by the web login, the voice session or, later, the MCP bearer key), never from
-tool arguments. Signing mandates with the organisation's admin key (M7.3) is not done yet.
+tool arguments.
+
+Signed mandates (M7.3): each mandate is a compact JWS (ES256, typ mandate+jws) by the buyer organisation's admin key
+over its canonical JSON, and policy.evaluate verifies it on every evaluation against that key alone (the gateway's
+own quote key cannot sign a mandate). A mandate whose content differs from what the admin signed is refused. In
+development the gateway signs the seeds with the org admin key from signing_key_dir when they are first used; in
+production the organisation admin signs them and the gateway only verifies.
 """
 
 import json
@@ -15,6 +21,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .identity import Buyer
+from .signing import TYP_MANDATE, SignatureInvalid, keys, keyset, verify
 
 SEEDS_PATH = Path(__file__).parent / "mandates.json"
 SCHEMA_PATH = Path(__file__).parent / "mandate.schema.json"
@@ -74,3 +81,36 @@ def for_buyer(buyer: Buyer) -> Mandate | None:
     applies."""
     m = seeds().get(buyer.mandate_id)
     return m if m is not None and m.org_id == buyer.org_id and m.holder == buyer.buyer_id else None
+
+
+# ---- signatures (M7.3) ---------------------------------------------------------------------------
+
+_signed: dict[str, dict[str, str]] = {}  # org admin kid -> mandate_id -> JWS
+
+
+def sign(m: Mandate) -> str:
+    """The org admin's JWS over the mandate's canonical JSON."""
+    return keys().admin.sign(m.model_dump(mode="json"), TYP_MANDATE)
+
+
+def signed(mandate_id: str) -> str | None:
+    """The signed seed with this id, under the current org admin key."""
+    admin = keys().admin
+    tokens = _signed.get(admin.kid)
+    if tokens is None:
+        tokens = _signed[admin.kid] = {mid: sign(m) for mid, m in seeds().items()}
+    return tokens.get(mandate_id)
+
+
+def verified(m: Mandate, token: str | None = None) -> bool:
+    """True when `token` (default: the signed seed of m.mandate_id) is the org admin's signature over exactly m."""
+    token = token or signed(m.mandate_id)
+    if not token:
+        return False
+    try:
+        verify(
+            token, keyset({"keys": [keys().admin.public_jwk()]}, TYP_MANDATE), TYP_MANDATE, m.model_dump(mode="json")
+        )
+    except SignatureInvalid:
+        return False
+    return True

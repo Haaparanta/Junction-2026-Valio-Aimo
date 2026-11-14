@@ -13,6 +13,8 @@
 * Approvals: only an approver of the same organisation decides, never the order's own buyer; any change to the quote
   voids the approval; a decision after decide_by (as of the demo clock) expires it. Deciding twice answers the first
   decision.
+* Receipt (M8.5): a completed order carries receipt_jws, an ES256 JWS by the gateway key over the canonical receipt
+  (receipt_document); it verifies against /.well-known/jwks.json (scripts/verify_quote.py).
 
 Ownership is checked here: an order belongs to the buyer who placed it; an approver of the same org may read it.
 """
@@ -39,6 +41,7 @@ from .fmt import at_en, at_fi, day_en, day_fi, fi, helsinki_at, instant, money, 
 from .identity import Buyer
 from .mandates import for_buyer
 from .policy import Decision, LineFacts, OpenLine, PolicyContext, Reason, evaluate
+from .signing import TYP_RECEIPT, keys, sha256_hex
 from .stubs import PRODUCTS, StubState, assess, order_by, sha
 
 DECIDE_BUFFER = timedelta(hours=1)  # decide_by = the earliest order-by time minus this (G-07)
@@ -83,6 +86,50 @@ def transition(o: Order, to: TradeStatus, **update) -> Order:
     if to not in TRANSITIONS[o.status]:
         raise IllegalTransition(f"{o.status} -> {to}")
     return o.model_copy(update={"status": to, **update})
+
+
+def receipt_document(o: Order, meta: OrderMeta, approval: Approval | None = None) -> dict:
+    """What an order's receipt_jws signs: the completed order, its lines, who approved it and the signed quote it
+    came from (by hash)."""
+    q = meta.quote
+    return {
+        "type": "order_receipt",
+        "order_id": o.order_id,
+        "quote_id": o.quote_id,
+        "status": o.status,
+        "buyer_id": meta.buyer.buyer_id,
+        "org_id": meta.buyer.org_id,
+        "currency": q.currency,
+        "lines": [
+            {
+                "line_id": x.line_id,
+                "product_id": x.product_id,
+                "api_unit": x.api_unit,
+                "qty": x.qty,
+                "unit_price_net": x.unit_price_net,
+                "line_net": x.line_net,
+                "delivery_date": x.delivery_date,
+            }
+            for x in q.lines
+        ],
+        "total_net": o.total_net,
+        "total_vat": q.total_vat,
+        "total_gross": o.total_gross,
+        "delivery_date": o.delivery_date,
+        "created_at": o.created_at,
+        "completed_at": o.completed_at,
+        "approval_id": approval.approval_id if approval else None,
+        "approved_by": approval.decided_by if approval else None,
+        "approved_at": approval.decided_at if approval else None,
+        "quote_sha256": meta.quote_sha256,
+        "quote_jws_sha256": sha256_hex(q.quote_jws) if q.quote_jws else None,
+    }
+
+
+def complete(o: Order, meta: OrderMeta, now: datetime, approval: Approval | None = None) -> Order:
+    """ready_for_complete -> completed, with the signed receipt (M8.5)."""
+    o = transition(o, "completed", completed_at=now.isoformat())
+    return o.model_copy(update={"receipt_jws": keys().quotes.sign(receipt_document(o, meta, approval), TYP_RECEIPT)})
 
 
 # ---- the policy context --------------------------------------------------------------------------
@@ -411,8 +458,7 @@ def place_order(
             meta.reasons = drift
             o = _escalate_drift(state, o, drift, quote_id)
         elif decision.outcome == "allow":
-            o = transition(o, "ready_for_complete")
-            o = transition(o, "completed", completed_at=now.isoformat())
+            o = complete(transition(o, "ready_for_complete"), meta, now)
         else:
             approval_id = "A-" + order_id[2:]
             o = transition(
@@ -598,8 +644,7 @@ def decide(
                 o = _escalate_drift(state, o, drift, a.quote_id)
             else:
                 a = a.model_copy(update={"status": "completed", "outcome": "approved", "reason_code": None, **stamp})
-                o = transition(o, "ready_for_complete", reason_code=None)
-                o = transition(o, "completed", completed_at=now.isoformat())
+                o = complete(transition(o, "ready_for_complete", reason_code=None), meta, now, a)
         state.approvals[approval_id] = a
         state.orders[o.order_id] = o
         return approval_response(state, a)

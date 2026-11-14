@@ -1,4 +1,5 @@
-"""Signed quotes with fixed prices (PLAN M6.2-M6.4): ES256 over RFC 8785 JSON, the JWKS and scripts/verify_quote.py."""
+"""Signatures (PLAN M6.2-M6.4, M7.3, M8.5): ES256 over RFC 8785 JSON, the JWKS, scripts/verify_quote.py, signed
+order receipts and signed mandates."""
 
 import base64
 import importlib.util
@@ -9,12 +10,14 @@ from pathlib import Path
 
 import pytest
 import rfc8785
-from app import signing
+from app import mandates, orders, signing
 from app.settings import Settings
 from app.stubs import quote_expiry
 from joserfc import jws
 from joserfc.jwk import ECKey, OctKey
-from test_orders import MILK, quote_for
+from test_approvals import decide
+from test_orders import MILK, order, quote_for
+from test_policy import CHEF, line, run
 
 REPO = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location("verify_quote", REPO / "scripts" / "verify_quote.py")
@@ -48,6 +51,8 @@ def test_the_jwks_serves_two_public_p256_keys_named_by_thumbprint(chef):
     assert len(keys) == 2 and len({k["kid"] for k in keys}) == 2
     for k in keys:
         assert (k["kty"], k["crv"], k["alg"], k["use"]) == ("EC", "P-256", "ES256", "sig")
+    assert [k["typ"] for k in keys] == [[signing.TYP_QUOTE, signing.TYP_RECEIPT], [signing.TYP_MANDATE]]
+    for k in keys:
         assert "d" not in k  # never the private part
         assert k["kid"] == ECKey.import_key({n: k[n] for n in ("kty", "crv", "x", "y")}).thumbprint()
 
@@ -173,3 +178,72 @@ def test_keys_from_settings_win_over_files(tmp_path):
     assert not (tmp_path / "keys").exists()
     with pytest.raises(ValueError):  # one key for both roles would let the gateway sign mandates
         signing.load(Settings(_env_file=None, signing_key=s.org_admin_key, org_admin_key=s.org_admin_key))
+
+
+# ---- M8.5 the signed order receipt --------------------------------------------------------------
+
+
+def test_a_completed_order_has_a_receipt_that_verifies(chef, tmp_path):
+    o = order(chef, quote_for(chef)["quote_id"])
+    assert o["status"] == "completed" and o["order"]["receipt_jws"]
+    receipt = signing.verify(o["order"]["receipt_jws"], jwks(chef), signing.TYP_RECEIPT)
+    assert (receipt["order_id"], receipt["status"], receipt["total_net"]) == (o["order_id"], "completed", "399.96")
+    assert receipt["buyer_id"] == "chef" and receipt["approval_id"] is None and receipt["lines"][0]["qty"] == 396
+    q = chef.get(f"/v1/quotes/{o['order']['quote_id']}").json()
+    assert receipt["quote_jws_sha256"] == signing.sha256_hex(q["quote_jws"])  # bound to the signed quote
+
+    assert run_script(tmp_path, o, jwks(chef)) == 0  # an OrderResponse holds the order
+    read = chef.get(f"/v1/orders/{o['order_id']}").json()["order"]
+    assert run_script(tmp_path, read, jwks(chef)) == 0
+    assert run_script(tmp_path, {**read, "total_net": "1.00"}, jwks(chef)) == 1
+    admin_signed = signing.Signer(signing.keys().admin.key).sign(receipt, signing.TYP_RECEIPT)
+    assert run_script(tmp_path, {**read, "receipt_jws": admin_signed}, jwks(chef)) == 1  # the mandate key cannot
+    stranger = signing.Signer(ECKey.generate_key("P-256", private=True)).sign(receipt, signing.TYP_RECEIPT)
+    assert run_script(tmp_path, {**read, "receipt_jws": stranger}, jwks(chef)) == 1
+
+
+def test_an_order_waiting_for_approval_has_no_receipt_until_approved(chef, client, tmp_path):
+    o = order(chef, quote_for(chef, 1000)["quote_id"])
+    assert o["status"] == "requires_escalation" and o["order"]["receipt_jws"] is None
+    head = type(chef)(client.app)
+    head.post("/api/login", json={"buyer_id": "head_chef"})
+    done = decide(head, o["approval_id"], "approve", "ok").json()["order"]
+    assert done["status"] == "completed" and run_script(tmp_path, done, jwks(chef)) == 0
+    receipt = signing.verify(done["receipt_jws"], jwks(chef), signing.TYP_RECEIPT)
+    assert (receipt["approval_id"], receipt["approved_by"]) == (o["approval_id"], "Head chef Mikko (demo)")
+
+
+# ---- M7.3 signed mandates -----------------------------------------------------------------------
+
+
+def test_the_seeded_mandates_are_signed_by_the_org_admin_key():
+    for mid, m in mandates.seeds().items():
+        token = mandates.signed(mid)
+        assert token and mandates.verified(m, token)
+        header = jws.extract_compact(token.encode()).headers()
+        assert (header["typ"], header["kid"]) == (signing.TYP_MANDATE, signing.keys().admin.kid)
+
+
+def test_a_tampered_mandate_is_refused():
+    assert run(CHEF, line()).outcome == "allow"
+    raised = CHEF.model_copy(update={"order_cap_eur": "99999.00"})
+    d = run(raised, line(qty=1000, net="1010.00"))
+    assert (d.outcome, d.codes, d.reason_code) == ("deny", ["MANDATE_INVALID"], "policy_denied")
+
+
+def test_a_mandate_signed_by_another_key_is_refused():
+    with pytest.raises(ValueError):
+        signing.keys().quotes.sign(CHEF.model_dump(mode="json"), signing.TYP_MANDATE)  # the gateway key refuses
+    gateway_signed = signing.Signer(signing.keys().quotes.key).sign(CHEF.model_dump(mode="json"), signing.TYP_MANDATE)
+    assert not mandates.verified(CHEF, gateway_signed)  # the gateway key may sign quotes, never mandates
+    swapped = mandates.signed("mandate-head-chef")
+    assert not mandates.verified(CHEF, swapped)  # another holder's signed mandate
+    assert mandates.verified(CHEF, mandates.signed("mandate-chef-500"))
+
+
+def test_an_order_under_a_tampered_mandate_is_denied(chef, monkeypatch):
+    tampered = CHEF.model_copy(update={"order_cap_eur": "99999.00"})
+    monkeypatch.setattr(orders, "for_buyer", lambda buyer: tampered)
+    o = order(chef, quote_for(chef, 1000)["quote_id"])
+    assert (o["status"], o["reason_code"]) == ("canceled", "policy_denied")
+    assert o["order"]["reasons"][0].startswith("MANDATE_INVALID:") and o["order"]["receipt_jws"] is None

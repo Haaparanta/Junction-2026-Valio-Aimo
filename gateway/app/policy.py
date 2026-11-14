@@ -6,7 +6,8 @@ approval request and the audit log, and the whole decision maps to one reason_co
 OVER_ORDER_CAP -> limit_exceeded).
 
 Triggers, in the order their reasons are listed:
-* deny: no mandate for the caller, a mandate without order rights, an allergen or claim that contradicts the diet need;
+* deny: no mandate for the caller, a mandate whose org admin signature does not verify (M7.3), a mandate without
+  order rights, an allergen or claim that contradicts the diet need;
 * require_approval: over the order cap; over the cap per requisition (the buyer's open orders for the same delivery
   date count together, so a need cannot be split under the cap); over the weekly budget; more units on a line than the
   mandate allows; a category or temperature class outside the mandate; a delivery weekday not allowed; a substituted
@@ -26,7 +27,7 @@ from typing import Literal
 
 from .contract import Quote, ReasonCode
 from .fmt import fi, money
-from .mandates import Mandate
+from .mandates import Mandate, verified
 
 Outcome = Literal["allow", "require_approval", "deny"]
 PRICE_JUMP_PCT = Decimal(10)  # a unit price more than 10 % above the buyer's previous price needs approval (R-07)
@@ -81,6 +82,7 @@ class OpenLine:
 class PolicyContext:
     lines: list[LineFacts]
     open_lines: list[OpenLine] = field(default_factory=list)
+    mandate_jws: str | None = None  # the mandate's signed token; None: the signed seed of that mandate id (M7.3)
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,12 @@ def evaluate(mandate: Mandate | None, quote: Quote, context: PolicyContext) -> D
     """The decision for ordering `quote` under `mandate`. The mandate comes from the authenticated caller only."""
     if mandate is None:
         return _deny("NO_MANDATE", "no mandate covers this caller", "tälle käyttäjälle ei ole valtuutusta")
+    if not verified(mandate, context.mandate_jws):  # verified on every evaluation (M7.3)
+        return _deny(
+            "MANDATE_INVALID",
+            "the mandate is not the one the organisation admin signed",
+            "valtuutus ei vastaa organisaation pääkäyttäjän allekirjoittamaa",
+        )
     if not mandate.orders_allowed:
         return _deny("ORDERS_NOT_ALLOWED", "this mandate does not allow orders", "valtuutus ei salli tilauksia")
 
