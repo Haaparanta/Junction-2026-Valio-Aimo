@@ -1,6 +1,7 @@
 /**
- * Placeholder moos synthesized with Web Audio: no ElevenLabs credits are spent. Recorded SFX v3 moos replace
- * these once approved (PLAN M17.1, scripts/gen_moos.py). Two channels: one-shot moos and the chewing loop.
+ * Mansikki's moos: recorded ElevenLabs SFX v3 clips from public/sfx/moo (scripts/gen_moos.py), normalised on
+ * decode, with a Web Audio synthesis as the fallback while they load or if they fail. Two channels: one-shot
+ * moos and the chewing loop. Everything goes through one analyser that drives the cow's mouth.
  */
 import type { Mood } from "./mood";
 
@@ -116,6 +117,8 @@ export class MooPlayer {
   readonly analyser: AnalyserNode | null = null;
   private loop: { stop: () => void } | null = null;
   private playing = new Set<AudioScheduledSourceNode>();
+  private clips: Partial<Record<Mood | "chewing", { buffer: AudioBuffer; gain: number }[]>> = {};
+  private lastTake: Partial<Record<Mood, number>> = {};
 
   /** Call inside a click handler: browsers only start audio after a user gesture. */
   unlock(): void {
@@ -129,8 +132,54 @@ export class MooPlayer {
       this.ctx = ctx;
       this.out = out;
       (this as { analyser: AnalyserNode | null }).analyser = analyser;
+      void this.load(ctx); // not awaited: never block the Start click on downloads
     }
     void this.ctx.resume();
+  }
+
+  private async load(ctx: AudioContext): Promise<void> {
+    try {
+      const manifest = (await (await fetch("/sfx/moo/manifest.json")).json()) as Record<string, string[]>;
+      await Promise.all(Object.entries(manifest).map(async ([mood, files]) => {
+        const takes = await Promise.all(files.map(async (f) => {
+          const buffer = await ctx.decodeAudioData(await (await fetch(f)).arrayBuffer());
+          return { buffer, gain: normalisingGain(buffer, mood === "chewing" ? 0.03 : 0.09) };
+        }));
+        this.clips[mood as Mood | "chewing"] = takes;
+      }));
+    } catch {
+      /* keep the synthesized fallback */
+    }
+  }
+
+  /** Plays a recorded take (never the same one twice in a row); resolves when it ends. */
+  private playClip(ctx: AudioContext, out: AudioNode, mood: Mood): Promise<void> | null {
+    const takes = this.clips[mood];
+    if (!takes?.length) return null;
+    let i = Math.floor(Math.random() * takes.length);
+    if (takes.length > 1 && i === this.lastTake[mood]) i = (i + 1) % takes.length;
+    this.lastTake[mood] = i;
+    const take = takes[i];
+    if (!take) return null;
+    const src = ctx.createBufferSource();
+    src.buffer = take.buffer;
+    const g = ctx.createGain();
+    g.gain.value = take.gain;
+    src.connect(g).connect(out);
+    this.playing.add(src);
+    return new Promise((resolve) => {
+      // onended never fires while the context is suspended: a timer guarantees the turn loop moves on.
+      const timer = setTimeout(done, (take.buffer.duration + 0.5) * 1000);
+      function done() {
+        clearTimeout(timer);
+        resolve();
+      }
+      src.onended = () => {
+        this.playing.delete(src);
+        done();
+      };
+      src.start();
+    });
   }
 
   get ready(): boolean {
@@ -141,6 +190,8 @@ export class MooPlayer {
   play(mood: Mood): Promise<void> {
     const { ctx, out } = this;
     if (!ctx || !out) return Promise.resolve();
+    const recorded = this.playClip(ctx, out, mood);
+    if (recorded) return recorded;
     const c = CONTOURS[mood];
     const count = c.count ?? 1;
     let t = ctx.currentTime + 0.02;
@@ -176,6 +227,18 @@ export class MooPlayer {
   startLoop(): void {
     const { ctx, out } = this;
     if (!ctx || !out || this.loop) return;
+    const chew = this.clips.chewing?.[0];
+    if (chew) {
+      const src = ctx.createBufferSource();
+      src.buffer = chew.buffer;
+      src.loop = true;
+      const g = ctx.createGain();
+      g.gain.value = chew.gain;
+      src.connect(g).connect(out);
+      src.start();
+      this.loop = { stop: () => { try { src.stop(); } catch { /* stopped */ } } };
+      return;
+    }
     const len = ctx.sampleRate * 2;
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -209,6 +272,25 @@ export class MooPlayer {
     this.loop?.stop();
     this.loop = null;
   }
+}
+
+/** Gain that brings a clip's loud part to the target RMS, capped so near-silent clips are not blown up. */
+export function normalisingGain(buffer: { getChannelData(c: number): Float32Array; length: number }, target: number): number {
+  const d = buffer.getChannelData(0);
+  let peak = 0;
+  let sum = 0;
+  let n = 0;
+  for (let i = 0; i < d.length; i++) {
+    const x = Math.abs(d[i] ?? 0);
+    peak = Math.max(peak, x);
+    if (x > 0.005) {
+      sum += x * x;
+      n++;
+    }
+  }
+  if (n === 0 || peak === 0) return 1;
+  const rms = Math.sqrt(sum / n);
+  return Math.min(target / rms, 0.95 / peak, 8);
 }
 
 export const mooPlayer = new MooPlayer();

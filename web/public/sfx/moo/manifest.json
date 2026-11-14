@@ -1,0 +1,25 @@
+{
+  "greet": [
+    "/sfx/moo/greet-1.mp3",
+    "/sfx/moo/greet-2.mp3"
+  ],
+  "happy": [
+    "/sfx/moo/happy-1.mp3",
+    "/sfx/moo/happy-2.mp3"
+  ],
+  "question": [
+    "/sfx/moo/question-1.mp3",
+    "/sfx/moo/question-2.mp3"
+  ],
+  "alarmed": [
+    "/sfx/moo/alarmed-1.mp3",
+    "/sfx/moo/alarmed-2.mp3"
+  ],
+  "celebrate": [
+    "/sfx/moo/celebrate-1.mp3",
+    "/sfx/moo/celebrate-2.mp3"
+  ],
+  "chewing": [
+    "/sfx/moo/chewing-1.mp3"
+  ]
+}
