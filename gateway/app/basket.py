@@ -5,7 +5,7 @@ last priced snapshot. Every change prices the line again in exactly one function
 gateway decides every number. Quotes, orders and approvals stay in StubState until M6 and M8.
 
 The internal API below (create_basket, get, current, add_lines, update_line, choose_product, remove_line,
-restore_line, mark_quoted, mark_ordered, is_stale) is what the routes call, and what the sheet import, the photo
+restore_line, quote, mark_quoted, mark_ordered, is_stale) is what the routes call, and what the sheet import, the photo
 import and plan_dish build on: they turn rows, photo items or dish ingredients into LineDraft objects.
 """
 
@@ -27,6 +27,7 @@ from .contract import (
     Basket,
     BasketLine,
     BasketLinePatch,
+    BasketQuoteResponse,
     BasketResponse,
     Confidence,
     FlagNote,
@@ -43,7 +44,7 @@ from .contract import (
     Unit,
 )
 from .db import Store
-from .fmt import at_en, at_fi, day_en, day_fi, fi, ids_en, ids_fi, money, num, quoted, to_helsinki
+from .fmt import at_en, at_fi, clock_en, clock_fi, day_en, day_fi, fi, ids_en, ids_fi, money, num, quoted, to_helsinki
 from .identity import Buyer, SettingsDep
 from .settings import Settings
 from .stubs import PRODUCTS, StubState, heads_for, invented_warnings, matches, rank, vat_of
@@ -600,6 +601,45 @@ class BasketService:
             self._bump(c, basket_id, now)
             return self._changed(c, buyer, basket_id, line_id, "restored")
 
+    def quote(self, buyer: Buyer, basket_id: str) -> BasketQuoteResponse:
+        """quote_basket: one quote for the whole basket, or basket_incomplete with the lines to resolve first."""
+        basket = self.get(buyer, basket_id)
+        if basket.status == "ordered":
+            q = self.stubs.get_quote(buyer, basket.quote_id) if basket.quote_id else None
+            return BasketQuoteResponse(
+                reason_code="basket_locked",
+                basket_id=basket_id,
+                quote_id=q.quote_id if q else None,
+                quote=q,
+                total_net=q.total_net if q else None,
+                total_gross=q.total_gross if q else None,
+                expires_at=q.expires_at if q else None,
+                message_for_user=LOCKED,
+            )
+        waiting = open_lines(basket)
+        if not basket.lines or waiting:
+            return BasketQuoteResponse(
+                status="incomplete",
+                reason_code="basket_incomplete",
+                basket_id=basket_id,
+                open_lines=waiting,
+                message_for_user=incomplete_text(basket),
+                warnings=warnings_for(basket),
+            )
+        q = self.stubs.create_basket_quote(buyer, basket, self.settings.as_of)
+        self.mark_quoted(buyer, basket_id, q.quote_id)
+        return BasketQuoteResponse(
+            status=q.status,
+            basket_id=basket_id,
+            quote_id=q.quote_id,
+            quote=q,
+            total_net=q.total_net,
+            total_gross=q.total_gross,
+            expires_at=q.expires_at,
+            message_for_user=quote_text(q),
+            warnings=["stub: quote is not signed yet (M6)", *invented_warnings(x.product_id for x in q.lines)],
+        )
+
     def mark_quoted(self, buyer: Buyer, basket_id: str, quote_id: str) -> Basket:
         """Record the basket's latest quote. Not a change to the lines, so the version stays."""
         with self._tx() as c:
@@ -807,6 +847,32 @@ def summary(basket: Basket, *, ordered_note: bool = True) -> Msg:
         fi_parts.append("Tarjous on vanhentunut, koska kori muuttui: pyydä uusi tarjous.")
         en_parts.append("The quote is out of date because the basket changed: make a new quote.")
     return Msg(fi=" ".join(fi_parts), en=" ".join(en_parts))
+
+
+def incomplete_text(basket: Basket) -> Msg:
+    if not basket.lines:
+        return Msg(
+            fi="Kori on tyhjä, joten tarjottavaa ei ole. Lisää ensin tuotteita.",
+            en="The basket is empty, so there is nothing to quote. Add products first.",
+        )
+    more_fi, more_en = open_text(basket)
+    one = len(open_lines(basket)) == 1
+    return Msg(
+        fi=f"Tarjousta ei voi vielä tehdä. {' '.join(more_fi)} "
+        + ("Ratkaise se ensin tai poista se." if one else "Ratkaise ne ensin tai poista ne."),
+        en=f"No quote yet. {' '.join(more_en)} "
+        + ("Resolve it first or remove it." if one else "Resolve them first or remove them."),
+    )
+
+
+def quote_text(q: Quote) -> Msg:
+    n, until = len(q.lines), datetime.fromisoformat(q.expires_at)
+    return Msg(
+        fi=f"Tarjous {q.quote_id}: {'1 rivi' if n == 1 else f'{n} riviä'}, {fi(q.total_net)} € alv 0 % "
+        f"({fi(q.total_gross)} € sis. alv). Hinta on kiinteä {clock_fi(until)} asti. Vahvista tilaus näytöltä.",
+        en=f"Quote {q.quote_id}: {'1 line' if n == 1 else f'{n} lines'}, EUR {q.total_net} excl. VAT "
+        f"(EUR {q.total_gross} incl. VAT). The price is fixed until {clock_en(until)}. Please confirm on screen.",
+    )
 
 
 def line_short(line: BasketLine) -> Msg:

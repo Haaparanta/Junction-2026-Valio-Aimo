@@ -1,7 +1,7 @@
 {
   "type": "webhook",
   "name": "place_order",
-  "description": "Turn a confirmed quote into an order. Call ONLY after create_quote returned a quote_id AND request_buyer_confirmation returned 'confirmed'. If the buyer asks to skip a limit, call it anyway: the gateway decides. Read message_for_user to the buyer.",
+  "description": "Turn a confirmed quote into an order. Call ONLY after create_quote or quote_basket returned a quote_id AND request_buyer_confirmation returned 'confirmed'. If the buyer asks to skip a limit, call it anyway: the gateway decides. If it answers quote_stale, the basket changed: call quote_basket again. Read message_for_user to the buyer.",
   "response_timeout_secs": 15,
   "tool_error_handling_mode": "passthrough",
   "pre_tool_speech": "force",
@@ -39,7 +39,7 @@
       "properties": {
         "quote_id": {
           "type": "string",
-          "description": "quote_id exactly as returned by create_quote. Never invent or edit it."
+          "description": "quote_id exactly as returned by create_quote or quote_basket. Never invent or edit it."
         }
       },
       "required": [

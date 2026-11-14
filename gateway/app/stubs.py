@@ -22,6 +22,7 @@ from typing import Literal
 from .contract import (
     Approval,
     ApprovalResponse,
+    Basket,
     ConfirmResponse,
     ContentPerUnit,
     Evidence,
@@ -771,6 +772,64 @@ class StubState:
             warnings=["stub: quote is not signed yet (M6)", *invented_warnings([p.id])],
         )
 
+    def create_basket_quote(self, buyer: Buyer, basket: Basket, as_of: str) -> Quote:
+        """One fixed-price quote for every priced line of a basket, idempotent per (buyer, basket, version).
+
+        Each line is priced as its basket line was: VAT per line on the net total at the row's rate, rounded
+        half-up (F-06). Totals are the sums of the lines; delivery_date is the earliest line date; expires_at is
+        the earliest of issue + 15 min and every line's order-by time.
+        """
+        priced = [line for line in basket.lines if line.status == "priced" and line.offer is not None]
+        if not priced:
+            raise ValueError("a basket quote needs at least one priced line")
+        quote_id = "Q-" + sha(f"{buyer.buyer_id}|{basket.basket_id}|{basket.version}")[:10].upper()
+        with self.lock:
+            q = self.quotes.get(quote_id)
+            if q is None:
+                lines = []
+                for line in priced:
+                    o = line.offer
+                    if o is None:
+                        continue
+                    unit_price = Decimal(o.unit_price_net)
+                    net = unit_price * o.qty
+                    rate = PRODUCTS[o.product_id].vat
+                    vat = vat_of(net, rate)
+                    lines.append(
+                        QuoteLine(
+                            line_id=line.line_id,
+                            product_id=o.product_id,
+                            name_fi=o.name_fi,
+                            api_unit=o.api_unit,
+                            qty=o.qty,
+                            unit_price_net=money(unit_price),
+                            line_net=money(net),
+                            vat_rate=str(rate),
+                            line_vat=money(vat),
+                            line_gross=money(net + vat),
+                            delivery_date=o.delivery_date,
+                        )
+                    )
+                issued = instant(as_of)
+                expires = min([issued + timedelta(minutes=15), *(instant(x.offer.order_by) for x in priced if x.offer)])
+                q = Quote(
+                    quote_id=quote_id,
+                    status="ready_for_complete",
+                    buyer_id=buyer.buyer_id,
+                    lines=lines,
+                    total_net=money(sum((Decimal(x.line_net) for x in lines), Decimal(0))),
+                    total_vat=money(sum((Decimal(x.line_vat) for x in lines), Decimal(0))),
+                    total_gross=money(sum((Decimal(x.line_gross) for x in lines), Decimal(0))),
+                    delivery_date=min(x.delivery_date for x in lines),
+                    basket_id=basket.basket_id,
+                    basket_version=basket.version,
+                    issued_at=issued.isoformat(),
+                    expires_at=expires.isoformat(),
+                    evidence=Evidence(api_time_now="2026-11-14T01:16:59+0200", stub=True),
+                )
+                self.quotes[quote_id] = q
+        return q
+
     def get_quote(self, buyer: Buyer, quote_id: str) -> Quote | None:
         q = self.quotes.get(quote_id)
         return q if q is not None and q.buyer_id == buyer.buyer_id else None
@@ -813,6 +872,17 @@ class StubState:
                 )
             order_id = "O-" + sha(idem)[:10].upper()
             o = self.orders.get(order_id)
+            if o is None and Decimal(q.total_net) <= Decimal(buyer.order_cap_eur):
+                o = Order(  # within the buyer's order cap: no approval needed
+                    order_id=order_id,
+                    quote_id=quote_id,
+                    status="completed",
+                    total_net=q.total_net,
+                    total_gross=q.total_gross,
+                    delivery_date=q.delivery_date,
+                    created_at=as_of,
+                )
+                self.orders[order_id] = o
             if o is None:
                 approval_id = "A-" + order_id[2:]
                 decide_by = "2026-11-15T16:00:00+02:00"

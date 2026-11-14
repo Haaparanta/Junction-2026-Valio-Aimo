@@ -9,6 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path
 
+from ..basket import STALE_CONFIRM, STALE_ORDER, BasketsDep
 from ..contract import (
     ApprovalResponse,
     CancelOrderRequest,
@@ -31,7 +32,7 @@ from ..contract import (
 )
 from ..identity import CallerDep, SettingsDep, WebBuyerDep
 from ..stubs import get_product, plan_quantity, search, substitutes
-from . import baskets
+from . import baskets as basket_routes
 from .common import AGENT, StateDep, not_found, tool
 
 router = APIRouter(prefix="/v1")
@@ -155,8 +156,19 @@ def get_quote(quote_id: str, caller: CallerDep, stubs: StateDep) -> Quote:
 
 
 @router.post("/quotes/{quote_id}/confirm", tags=["ui"])
-def confirm_quote(quote_id: str, buyer: WebBuyerDep, stubs: StateDep, settings: SettingsDep) -> ConfirmResponse:
+def confirm_quote(
+    quote_id: str, buyer: WebBuyerDep, stubs: StateDep, baskets: BasketsDep, settings: SettingsDep
+) -> ConfirmResponse:
     """The on-screen Confirm, under the buyer's own web session. Agents cannot call this."""
+    q = stubs.get_quote(buyer, quote_id)
+    if q is not None and baskets.is_stale(q):  # its basket changed after the quote (B-06)
+        return ConfirmResponse(
+            status="incomplete",
+            reason_code="quote_stale",
+            quote_id=quote_id,
+            confirmed=False,
+            message_for_user=STALE_CONFIRM,
+        )
     res = stubs.confirm(buyer, quote_id, datetime.fromisoformat(settings.as_of).isoformat())
     if res is None:
         raise not_found("quote")
@@ -168,19 +180,28 @@ def confirm_quote(quote_id: str, buyer: WebBuyerDep, stubs: StateDep, settings: 
     operation_id="place_order",
     tags=AGENT,
     openapi_extra=tool(
-        "Turn a confirmed quote into an order. Call ONLY after create_quote returned a quote_id AND "
+        "Turn a confirmed quote into an order. Call ONLY after create_quote or quote_basket returned a quote_id AND "
         "request_buyer_confirmation returned 'confirmed'. If the buyer asks to skip a limit, call it anyway: "
-        "the gateway decides. Read message_for_user to the buyer.",
+        "the gateway decides. If it answers quote_stale, the basket changed: call quote_basket again. "
+        "Read message_for_user to the buyer.",
         filters=["order_id", "approval_id", "total_net"],
         timeout=15,
         pre_tool_speech="force",
         interruption_mode="disable_during_tool_and_turn",
     ),
 )
-def place_order(body: PlaceOrderRequest, caller: CallerDep, stubs: StateDep, settings: SettingsDep) -> OrderResponse:
+def place_order(
+    body: PlaceOrderRequest, caller: CallerDep, stubs: StateDep, baskets: BasketsDep, settings: SettingsDep
+) -> OrderResponse:
+    q = stubs.get_quote(caller.buyer, body.quote_id)
+    if q is not None and baskets.is_stale(q):  # its basket changed after the quote (B-06)
+        return OrderResponse(status="incomplete", reason_code="quote_stale", message_for_user=STALE_ORDER)
     # Idempotency from authenticated context: the LLM may call place_order twice (PLAN M8.2).
     scope = caller.conversation_id if caller.channel == "voice" else f"web:{caller.buyer.buyer_id}"
-    return stubs.place_order(caller.buyer, body.quote_id, f"{scope}|{body.quote_id}", settings.as_of)
+    res = stubs.place_order(caller.buyer, body.quote_id, f"{scope}|{body.quote_id}", settings.as_of)
+    if q is not None and q.basket_id and res.status in ("requires_escalation", "completed"):
+        baskets.mark_ordered(caller.buyer, q.basket_id)  # read-only from now on (B-03)
+    return res
 
 
 @router.get(
@@ -232,6 +253,6 @@ def get_approval(
     return res
 
 
-router.include_router(baskets.router)  # /v1/baskets/...: same agent and UI rules, its own module
+router.include_router(basket_routes.router)  # /v1/baskets/...: same agent and UI rules, its own module
 
 __all__ = ["router", "Msg"]

@@ -296,7 +296,7 @@ class PlaceOrderRequest(_Request):
     quote_id: str = Field(
         min_length=3,
         max_length=80,
-        description="quote_id exactly as returned by create_quote. Never invent or edit it.",
+        description="quote_id exactly as returned by create_quote or quote_basket. Never invent or edit it.",
     )
 
 

@@ -15,6 +15,7 @@ AGENT_TOOLS = {
     "get_basket",
     "update_basket_line",
     "remove_basket_line",
+    "quote_basket",
 }
 
 
@@ -52,6 +53,7 @@ def test_agent_request_schemas_are_flat_and_described(settings):
         "AddToBasketRequest",
         "UpdateBasketLineRequest",
         "BasketLineRequest",
+        "BasketRequest",
         "BasketLinePatch",
         "FromOfferRequest",
     ]:

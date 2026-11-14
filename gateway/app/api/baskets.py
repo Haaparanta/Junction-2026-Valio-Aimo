@@ -14,6 +14,8 @@ from ..contract import (
     AddToBasketRequest,
     BasketLinePatch,
     BasketLineRequest,
+    BasketQuoteResponse,
+    BasketRequest,
     BasketResponse,
     FromOfferRequest,
     UpdateBasketLineRequest,
@@ -119,6 +121,23 @@ def update_basket_line(body: UpdateBasketLineRequest, caller: CallerDep, baskets
 )
 def remove_basket_line(body: BasketLineRequest, caller: CallerDep, baskets: BasketsDep) -> BasketResponse:
     return changed(baskets.remove_line(caller.buyer, body.basket_id, body.line_id))
+
+
+@router.post(
+    "/quote",
+    operation_id="quote_basket",
+    tags=AGENT,
+    openapi_extra=tool(
+        "Make one fixed-price quote for every line of the basket. If it answers basket_incomplete, resolve the lines "
+        "in open_lines first (choose an alternative, give an amount or remove the line), then call it again. Then call "
+        "show_quote and request_buyer_confirmation with the quote_id. Never state a number that is not in this result.",
+        filters=["basket_id", "quote_id", "total_net", "total_gross", "expires_at", "open_lines"],
+        timeout=15,
+        pre_tool_speech="force",
+    ),
+)
+def quote_basket(body: BasketRequest, caller: CallerDep, baskets: BasketsDep) -> BasketQuoteResponse:
+    return baskets.quote(caller.buyer, body.basket_id)
 
 
 # ---- buyer UI: the web cookie only (voice headers alone get 401) ----
