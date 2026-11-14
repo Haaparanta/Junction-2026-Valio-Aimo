@@ -1,7 +1,7 @@
 {
   "type": "webhook",
   "name": "remove_basket_line",
-  "description": "Remove one basket line, only when the buyer asks. The buyer can undo it on screen. Then call show_basket.",
+  "description": "Remove one basket line, only when the buyer asks. The buyer can undo it on screen. Read message_for_user and never state a number that is not in this result. Then call show_basket.",
   "response_timeout_secs": 10,
   "tool_error_handling_mode": "passthrough",
   "pre_tool_speech": "auto",

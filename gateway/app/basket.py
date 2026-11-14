@@ -493,8 +493,9 @@ class BasketService:
         so a retried tool call never makes a second one. With dedupe, a need identical to an active line's need
         returns that line instead of a duplicate."""
         now = _now()
+        basket_id_or_new = basket_id_or_new.strip()  # an agent may pad the id
         with self._tx() as c:
-            if basket_id_or_new.strip().lower() == "new":
+            if basket_id_or_new.lower() == "new":
                 row = None
                 if conversation_id:
                     row = c.execute(

@@ -1,11 +1,13 @@
 """The stub catalogue and offers() (docs/basket-plan.md B-10, M22.1): candidates by head, filters, cut-offs."""
 
+from dataclasses import replace
 from datetime import date, datetime
+from decimal import Decimal
 
 import pytest
 from app.contract import OffersRequest, PlanQuantityRequest, SearchRequest
 from app.fmt import at_en, at_fi, day_en, day_fi, helsinki_at, instant, to_helsinki
-from app.stubs import PRODUCTS, StubState, get_product, offers, plan_quantity, search
+from app.stubs import PRODUCTS, StubState, assess, get_product, offers, plan_quantity, search
 from conftest import voice_headers
 
 AS_OF = "2026-11-14T10:00:00+02:00"  # Sat 14.11 10:00, the demo clock
@@ -138,6 +140,12 @@ def test_not_deliverable_and_partial_stock():
         query="kerma", heads=["kuohukerma", "vispikerma"], must_claims=["FREE_FROM_LACTOSE"], unit="L", amount=40
     )
     assert offers(lf40, AS_OF).options[0].product_id == "469346"  # 48 in stock covers 40
+
+
+def test_zero_stock_is_out_of_stock():
+    p = replace(PRODUCTS["464076"], stock="none")
+    qty, order_by, flags = assess(p, Decimal(20), date(2026, 11, 16), instant(AS_OF))
+    assert (qty, order_by.isoformat(), flags) == (4, "2026-11-15T17:00:00+02:00", ["OUT_OF_STOCK"])
 
 
 def test_catch_weight_lot_and_vendor_cutoff():

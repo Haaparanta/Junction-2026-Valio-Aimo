@@ -1,9 +1,11 @@
 """The basket in the gateway (docs/basket-plan.md M22): service, routes, one quote, the cap and stale quotes."""
 
 import re
+from typing import get_args
 
 import pytest
-from app.basket import MAX_LINES, LineDraft, service
+from app.basket import FLAG_TEXT, MAX_LINES, LineDraft, service
+from app.contract import OfferFlag
 from app.identity import BUYERS
 from conftest import voice_headers
 from fastapi import HTTPException
@@ -371,6 +373,7 @@ def test_an_identical_add_returns_the_same_line(chef):
     same_words = {**MILK, "query": "  Laktoositon   MAITO ", "heads": ["maitojuoma", "MAITO"]}
     assert add(chef, bid, same_words)["line"]["line_id"] == 1
     assert add(chef, bid, {**MILK, "amount": 500})["line"]["line_id"] == 2  # another amount is another need
+    assert add(chef, f" {bid} ", MILK)["line"]["line_id"] == 1  # a padded id still finds the basket
 
 
 def test_new_twice_in_one_voice_call_gives_one_basket(chef):
@@ -395,6 +398,28 @@ def test_at_most_200_active_lines(chef, svc):
     chef.delete(f"/v1/baskets/{bid}/lines/1")
     add(chef, bid, BUTTER)
     assert chef.post(f"/v1/baskets/{bid}/lines/1/restore").status_code == 422
+
+
+def test_concurrent_adds_never_share_a_line_id_or_a_version(chef, svc):
+    from concurrent.futures import ThreadPoolExecutor
+
+    bid = svc.create_basket(CHEF).basket_id
+    drafts = [
+        LineDraft(
+            source="import", need_text=f"voi {n}", product_id="464076", amount=n, unit="KG", need_date="2026-11-16"
+        )
+        for n in range(1, 25)
+    ]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        ids = list(pool.map(lambda d: svc.add_lines(CHEF, bid, [d]).lines[0].line_id, drafts))
+    basket = svc.get(CHEF, bid)
+    assert sorted(ids) == list(range(1, 25)) == [x.line_id for x in basket.lines]
+    assert basket.version == 1 + len(drafts)  # one bump per add, none lost
+
+
+def test_every_flag_has_an_explanation_and_a_next_step():
+    assert set(FLAG_TEXT) == set(get_args(OfferFlag))
+    assert all(m.fi.endswith(".") and m.en.endswith(".") and ". " in m.en for m in FLAG_TEXT.values())
 
 
 def test_need_text_is_kept_as_data(chef):

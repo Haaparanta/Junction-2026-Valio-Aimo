@@ -115,7 +115,8 @@ def update_basket_line(body: UpdateBasketLineRequest, caller: CallerDep, baskets
     operation_id="remove_basket_line",
     tags=AGENT,
     openapi_extra=tool(
-        "Remove one basket line, only when the buyer asks. The buyer can undo it on screen. Then call show_basket.",
+        "Remove one basket line, only when the buyer asks. The buyer can undo it on screen. Read message_for_user "
+        "and never state a number that is not in this result. Then call show_basket.",
         filters=BASKET,
     ),
 )
