@@ -1,0 +1,141 @@
+{
+  "additionalProperties": false,
+  "description": "One holder's mandate. Money is a decimal string in EUR excl. VAT.",
+  "properties": {
+    "mandate_id": {
+      "description": "Stable id; identity.Buyer.mandate_id points here.",
+      "title": "Mandate Id",
+      "type": "string"
+    },
+    "org_id": {
+      "description": "The buyer organisation; approvals stay inside it.",
+      "title": "Org Id",
+      "type": "string"
+    },
+    "holder": {
+      "description": "The buyer_id or agent id the mandate belongs to.",
+      "title": "Holder",
+      "type": "string"
+    },
+    "holder_kind": {
+      "description": "A person (web or voice) or an external AI agent.",
+      "enum": [
+        "person",
+        "agent"
+      ],
+      "title": "Holder Kind",
+      "type": "string"
+    },
+    "role": {
+      "description": "An approver may also decide the org's approvals.",
+      "enum": [
+        "buyer",
+        "approver"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "order_cap_eur": {
+      "description": "Per-order cap, applied per requisition (R-07).",
+      "pattern": "^\\d+\\.\\d{2}$",
+      "title": "Order Cap Eur",
+      "type": "string"
+    },
+    "weekly_budget_eur": {
+      "description": "Budget per ISO week of the delivery date, over all open orders.",
+      "pattern": "^\\d+\\.\\d{2}$",
+      "title": "Weekly Budget Eur",
+      "type": "string"
+    },
+    "allowed_categories": {
+      "description": "Category code prefixes the holder may buy ('10' covers 10400); an empty list allows any.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Allowed Categories",
+      "type": "array"
+    },
+    "allowed_temperatures": {
+      "description": "Temperature classes the holder may buy. A product whose class is unknown is not checked.",
+      "items": {
+        "enum": [
+          "chilled",
+          "frozen",
+          "ambient"
+        ],
+        "type": "string"
+      },
+      "title": "Allowed Temperatures",
+      "type": "array"
+    },
+    "max_qty_per_line": {
+      "description": "Most order units on one line.",
+      "exclusiveMinimum": 0,
+      "title": "Max Qty Per Line",
+      "type": "integer"
+    },
+    "substitution_consent": {
+      "description": "True: a substituted line needs no approval.",
+      "title": "Substitution Consent",
+      "type": "boolean"
+    },
+    "allowed_delivery_weekdays": {
+      "description": "Delivery weekdays allowed, Monday = 0.",
+      "items": {
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "type": "integer"
+      },
+      "title": "Allowed Delivery Weekdays",
+      "type": "array"
+    },
+    "approver_role": {
+      "const": "approver",
+      "description": "The role that decides this holder's approvals.",
+      "title": "Approver Role",
+      "type": "string"
+    },
+    "quotes_allowed": {
+      "description": "The holder may ask for quotes.",
+      "title": "Quotes Allowed",
+      "type": "boolean"
+    },
+    "orders_allowed": {
+      "description": "False: every order is denied.",
+      "title": "Orders Allowed",
+      "type": "boolean"
+    },
+    "every_order_needs_approval": {
+      "description": "True: even an order within every limit needs approval.",
+      "title": "Every Order Needs Approval",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "mandate_id",
+    "org_id",
+    "holder",
+    "holder_kind",
+    "role",
+    "order_cap_eur",
+    "weekly_budget_eur",
+    "allowed_categories",
+    "allowed_temperatures",
+    "max_qty_per_line",
+    "substitution_consent",
+    "allowed_delivery_weekdays",
+    "approver_role",
+    "quotes_allowed",
+    "orders_allowed",
+    "every_order_needs_approval"
+  ],
+  "title": "Mandate",
+  "type": "object"
+}

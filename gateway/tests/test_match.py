@@ -216,3 +216,15 @@ def test_variants_come_after_every_other_candidate():
     r = match_item(name="maito", entries=small)
     assert (r.kind, ids(r)) == ("several", ["464201", "465731", coffee])
     assert [c.product_id for c in close_names("maito", small)] == ["464201", "465731", coffee]
+
+
+def test_an_ingredient_mention_is_not_the_product():
+    """A real false positive on the catalogue: a pasta whose name says it contains egg offered for 'kananmuna'."""
+    entries = (
+        CatalogueEntry("463883", "Kieku Luomu kananmuna M90 5200g"),
+        CatalogueEntry("461412", "Barilla 6 kg Tagliatelle pasta, sisältää kananmunaa"),
+        CatalogueEntry("461413", "Pasta (sis. kananmunaa) 500 g"),
+    )
+    found = {c.product_id for c in match_item(name="kananmuna", entries=entries).candidates}
+    assert found == {"463883"}
+    assert match_item(name="tagliatelle pasta", entries=entries).candidates[0].product_id == "461412"

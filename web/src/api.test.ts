@@ -87,3 +87,28 @@ describe("dish job calls", () => {
     ]);
   });
 });
+
+describe("approval and order calls", () => {
+  it("list, decide, order and audit use the documented routes, with a flat decision body", async () => {
+    const sent = fakeFetch(200, { events: [] });
+    await api.approvals();
+    await api.decide("AP-1/2", "reject", "");
+    await api.order("O-1A2B3C4D5E");
+    await api.orderAudit("O-1A2B3C4D5E");
+    expect(sent.map((s) => `${s.method} ${s.url}`)).toEqual([
+      "GET /v1/approvals", "POST /v1/approvals/AP-1%2F2/decision", "GET /v1/orders/O-1A2B3C4D5E",
+      "GET /v1/orders/O-1A2B3C4D5E/audit",
+    ]);
+    expect(sent[1]?.body).toEqual({ decision: "reject", comment: "" });
+  });
+  it("the audit route answering 404 means no timeline yet, not an error", async () => {
+    fakeFetch(404, { detail: "Not Found" });
+    await expect(api.orderAudit("O-1A2B3C4D5E")).resolves.toBeNull();
+  });
+  it("a 403 on the decision route still throws, with its status", async () => {
+    fakeFetch(403, { detail: "approver role required" });
+    const e = await api.decide("AP-1", "approve", "ok").catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(HttpError);
+    expect((e as HttpError).status).toBe(403);
+  });
+});

@@ -1,4 +1,5 @@
-"""ElevenLabs post-call webhook (PLAN M10.3): HMAC over "t.body", 30-minute tolerance, secrets redacted."""
+"""ElevenLabs post-call webhook (PLAN M10.3): HMAC over "t.body", 30-minute tolerance, secrets redacted, and the
+transcript linked to the conversation's orders in the audit trail."""
 
 import hashlib
 import hmac
@@ -8,6 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from ..audit import AuditLog, link_transcript
 from ..identity import SettingsDep, StoreDep
 
 router = APIRouter(tags=["webhooks"])
@@ -53,6 +55,9 @@ async def post_call(request: Request, store: StoreDep, settings: SettingsDep) ->
     clean = redact(data)
     if event_type != "post_call_transcription":  # audio and failure events: keep metadata only
         clean = {k: clean.get(k) for k in ("conversation_id", "agent_id", "status", "failure_reason") if k in clean}
-    # Retries resend the same payload, so upsert by conversation id. M10 links it to orders and the audit chain.
+    # Retries resend the same payload, so upsert by conversation id, and link the transcript (by hash) to the
+    # orders this conversation placed, in the audit trail (M10.3); a retry links nothing twice.
     store.upsert_conversation(conversation_id, data.get("agent_id"), event_type, clean)
+    if event_type == "post_call_transcription":
+        link_transcript(AuditLog(store), conversation_id, event_type, clean, settings.as_of)
     return {"ok": True}

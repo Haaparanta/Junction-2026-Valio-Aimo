@@ -1,0 +1,73 @@
+/* Approvals, finished orders and the audit timeline (PLAN M9, M10.4). Phone first: 375 px, 16 px gutters. */
+
+/* Approver console */
+.approver .console { max-width: 40rem; margin: 0 auto; display: grid; gap: 1rem; }
+.approver .console h1 { font-size: clamp(1.5rem, 6vw, 2.1rem); margin: 0; display: flex; align-items: center; gap: 0.6rem; }
+.approver .count { display: inline-grid; place-items: center; min-width: 2.2rem; height: 2.2rem; padding: 0 0.4rem;
+                   background: var(--orange); border: var(--bw) solid var(--ink); border-radius: 999px;
+                   box-shadow: var(--shadow-sm); font-size: 1.1rem; }
+.approver .notice { margin: 0; }
+.approver .latest:empty { display: none; }
+.approver .latest:focus { outline: none; }
+.card.appr-item { background: repeating-linear-gradient(-45deg, #ffe7c2, #ffe7c2 14px, #ffd9a0 14px, #ffd9a0 28px); }
+.card.appr-item .tier { background: var(--orange); }
+.appr-item.focus { outline: 4px dashed var(--blue); outline-offset: 4px; }
+.appr-item h2 { font-size: 1.2rem; margin: 0.2rem 0; }
+.appr-lines-box { margin: 0.6rem 0; background: var(--panel); border: 2px solid var(--ink); border-radius: var(--r);
+                  padding: 0.45rem 0.7rem; }
+.appr-lines-box summary { font-weight: 700; cursor: pointer; }
+.appr-lines { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0.3rem; }
+.appr-lines li { display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: baseline;
+                 border-bottom: 2px solid var(--ink); padding-bottom: 0.25rem; }
+.appr-lines .qty { font-weight: 700; white-space: nowrap; }
+.appr-lines .name { min-width: 0; overflow-wrap: anywhere; }
+.appr-lines .num { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.appr-item .comment { display: block; font-weight: 700; margin: 0.6rem 0 0.25rem; }
+.appr-item textarea { width: 100%; font: inherit; padding: 0.5rem 0.6rem; color: var(--ink); background: var(--panel);
+                      border: var(--bw) solid var(--ink); border-radius: var(--r); resize: vertical; }
+.appr-item textarea:focus-visible { outline: 3px dashed var(--blue); outline-offset: 3px; }
+.decide { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.8rem; }
+.decide button { width: 100%; min-height: 3rem; }
+button.approve { background: var(--lime); }
+.decided { background: var(--panel); border: var(--bw) solid var(--ink); border-radius: var(--r); padding: 0.6rem 0.9rem;
+           box-shadow: var(--shadow-sm); }
+.decided summary { font-weight: 700; cursor: pointer; }
+.decided ul { list-style: none; padding: 0; margin: 0.7rem 0 0; display: grid; gap: 0.75rem; }
+.card.appr-done { box-shadow: var(--shadow-sm); padding: 0.7rem 0.8rem; }
+.appr-done-head { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0; }
+.appr-done.status-completed .appr-done-head .chip { background: var(--lime); }
+.appr-done.status-canceled .appr-done-head .chip { background: var(--red); }
+
+/* A decision's answer, on the console and the buyer's card */
+.result { margin-top: 0.7rem; padding: 0.6rem 0.8rem; border: var(--bw) solid var(--ink); border-radius: var(--r);
+          box-shadow: var(--shadow-sm); background: var(--panel); }
+.result p { margin: 0.15rem 0; }
+.result.tone-ok { background: var(--lime); }
+.result.tone-warn { background: var(--yellow); }
+.result.tone-bad { background: #ffc4c4; }
+
+/* The buyer's approval card once it is decided */
+.approval.status-completed { background: #e9ffd0; }
+.approval.status-completed .tier { background: var(--lime); }
+.approval.status-canceled { background: #ffe1e1; }
+.approval.status-canceled .tier { background: var(--red); }
+.order-facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 0.8rem; margin: 0.5rem 0; }
+.order-facts dt { font-weight: 700; }
+.order-facts dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.approver-comment { margin: 0.6rem 0; padding: 0.5rem 0.8rem; background: var(--panel); border: 2px solid var(--ink);
+                    border-left-width: 10px; border-radius: var(--r); }
+.receipt summary { font-weight: 700; cursor: pointer; }
+.receipt code { display: block; margin-top: 0.4rem; white-space: pre-wrap; word-break: break-all; font-size: 0.7rem; }
+
+/* What happened: the audit timeline */
+.timeline { margin-top: 0.8rem; background: var(--panel); border: 2px solid var(--ink); border-radius: var(--r);
+            padding: 0.45rem 0.7rem; }
+.timeline summary { font-weight: 700; cursor: pointer; }
+.timeline ol { list-style: none; margin: 0.5rem 0 0; padding: 0 0 0 0.9rem; border-left: var(--bw) solid var(--ink); }
+.timeline li { position: relative; padding: 0.15rem 0 0.6rem; }
+.timeline li::before { content: ""; position: absolute; left: calc(-0.9rem - 8px); top: 0.45rem; width: 11px; height: 11px;
+                       background: var(--accent); border: 2px solid var(--ink); border-radius: 50%; }
+.timeline p { margin: 0.1rem 0; }
+.tl-head { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.tl-meta { font-size: 0.85rem; }
+.tl-hash { font-size: 0.8rem; }

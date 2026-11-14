@@ -1,0 +1,59 @@
+{
+  "note": "Demo mandates (PLAN M7.1). Checked against mandate.schema.json on load. EUR amounts are excl. VAT and are assumptions, not from the brief (R-07, Q-17).",
+  "mandates": [
+    {
+      "mandate_id": "mandate-chef-500",
+      "org_id": "kitchen-42",
+      "holder": "chef",
+      "holder_kind": "person",
+      "role": "buyer",
+      "order_cap_eur": "500.00",
+      "weekly_budget_eur": "2000.00",
+      "allowed_categories": ["1", "2", "4"],
+      "allowed_temperatures": ["chilled", "frozen", "ambient"],
+      "max_qty_per_line": 2000,
+      "substitution_consent": false,
+      "allowed_delivery_weekdays": [0, 1, 2, 3, 4],
+      "approver_role": "approver",
+      "quotes_allowed": true,
+      "orders_allowed": true,
+      "every_order_needs_approval": false
+    },
+    {
+      "mandate_id": "mandate-head-chef",
+      "org_id": "kitchen-42",
+      "holder": "head_chef",
+      "holder_kind": "person",
+      "role": "approver",
+      "order_cap_eur": "5000.00",
+      "weekly_budget_eur": "20000.00",
+      "allowed_categories": [],
+      "allowed_temperatures": ["chilled", "frozen", "ambient"],
+      "max_qty_per_line": 10000,
+      "substitution_consent": true,
+      "allowed_delivery_weekdays": [0, 1, 2, 3, 4, 5],
+      "approver_role": "approver",
+      "quotes_allowed": true,
+      "orders_allowed": true,
+      "every_order_needs_approval": false
+    },
+    {
+      "mandate_id": "mandate-external-agent",
+      "org_id": "kitchen-42",
+      "holder": "external_agent",
+      "holder_kind": "agent",
+      "role": "buyer",
+      "order_cap_eur": "500.00",
+      "weekly_budget_eur": "2000.00",
+      "allowed_categories": ["10", "21", "22"],
+      "allowed_temperatures": ["chilled", "ambient"],
+      "max_qty_per_line": 1000,
+      "substitution_consent": false,
+      "allowed_delivery_weekdays": [0, 1, 2, 3, 4],
+      "approver_role": "approver",
+      "quotes_allowed": true,
+      "orders_allowed": true,
+      "every_order_needs_approval": true
+    }
+  ]
+}

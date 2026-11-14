@@ -17,18 +17,19 @@ The gateway decides every number: statuses and messages come from the priced lin
 data: they reach the line as need_text and raw_text, and no message quotes them.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import get_args
 
+from . import mandates
 from .basket import LOCKED, BasketService, LineDraft, summary, warnings_for
 from .contract import Confidence, ImportResponse, ImportRow, ImportRowStatus, LineSource, ListExtraction, Msg
 from .fmt import day_en, day_fi, ids_en, ids_fi, instant, to_helsinki
 from .identity import Buyer
-from .match import CatalogueEntry, catalogue_entries, close_names, match_item
+from .match import CatalogueEntry, close_names, match_item
 from .sheets import P_NO_ITEM, SheetRow
-from .stubs import PRODUCTS, StubState
+from .stubs import StubState
 
 ROW_STATUSES: list[ImportRowStatus] = list(get_args(ImportRowStatus))
 DATE_SEARCH_DAYS = 14  # how far ahead next_delivery_date looks for a pinned product
@@ -61,29 +62,33 @@ STATUS_WORDS: dict[ImportRowStatus, tuple[str, str, str]] = {  # after the count
 }
 
 
-def next_delivery_date(stubs: StubState, as_of: str, product_id: str | None) -> date:
+def next_delivery_date(
+    stubs: StubState, as_of: str, product_id: str | None, weekdays: Collection[int] | None = None
+) -> date:
     """The first date from the as-of day + 1 (at most DATE_SEARCH_DAYS ahead) that the pinned product can be
-    delivered on, before its cut-off; the as-of day + 1 without a product or when no such date is found."""
+    delivered on, before its cut-off, on a weekday the buyer's mandate allows (`weekdays`, Monday = 0; all days when
+    None); the first allowed day without a product, or when no such date is found."""
     first = to_helsinki(instant(as_of)).date() + timedelta(days=1)
-    p = PRODUCTS.get(product_id) if product_id else None
+    days = [first + timedelta(days=k) for k in range(DATE_SEARCH_DAYS)]
+    allowed = [d for d in days if weekdays is None or d.weekday() in weekdays] or days
+    p = stubs.backend.product(product_id) if product_id else None
     if p is None:
-        return first
-    for k in range(DATE_SEARCH_DAYS):
-        d = first + timedelta(days=k)
-        offer, why = stubs.price_product(p.id, 1.0, p.base_unit, d.isoformat(), as_of)
+        return allowed[0]
+    for d in allowed:
+        offer, why = stubs.price_product(p.product_id, 1.0, p.base_unit or "PCS", d.isoformat(), as_of)
         if offer is not None or (why is not None and not UNDELIVERABLE & set(why.flags)):
             return d
         if why is None:  # not priced at all: no date will do better
             break
-    return first
+    return allowed[0]
 
 
-def _alternatives(name: str, product_id: str, entries: tuple[CatalogueEntry, ...]) -> list[str]:
+def _alternatives(stubs: StubState, name: str, product_id: str, entries: tuple[CatalogueEntry, ...]) -> list[str]:
     """A pinned line's other close names, so the buyer can swap the product: from the row's name, or from the
     product's own catalogue name when the row has none close (an exact id or GTIN)."""
     found = close_names(name, entries, exclude=product_id)
-    if not found and product_id in PRODUCTS:
-        found = close_names(PRODUCTS[product_id].name, entries, exclude=product_id)
+    if not found and (p := stubs.backend.product(product_id)) is not None:
+        found = close_names(p.name_fi, entries, exclude=product_id)
     return [c.product_id for c in found]
 
 
@@ -97,20 +102,25 @@ def _amount(row: SheetRow) -> tuple[float | None, list[Msg]]:
 
 
 def _draft(
-    row: SheetRow, source: LineSource, confidence: Confidence | None, stubs: StubState, as_of: str
+    row: SheetRow,
+    source: LineSource,
+    confidence: Confidence | None,
+    stubs: StubState,
+    as_of: str,
+    weekdays: Collection[int] | None = None,
 ) -> tuple[LineDraft, list[Msg]]:
     """The row's draft and the notes for its message (the filled-in date, an amount out of range)."""
-    entries = catalogue_entries()
+    entries = stubs.backend.catalogue_entries()  # the stub catalogue or the real one, read once by the backend
     m = match_item(row.product_id, row.gtin, row.name, entries=entries)
     product_id = m.candidates[0].product_id if m.kind in ("exact", "one") else None
     if product_id is not None:
-        candidates = _alternatives(row.name, product_id, entries)
+        candidates = _alternatives(stubs, row.name, product_id, entries)
     else:
         candidates = [c.product_id for c in m.candidates] if m.kind == "several" else []
     amount, notes = _amount(row)
     need_date = row.need_date
     if not need_date:
-        d = next_delivery_date(stubs, as_of, product_id)
+        d = next_delivery_date(stubs, as_of, product_id, weekdays)
         need_date = d.isoformat()
         notes.append(
             Msg(
@@ -182,6 +192,9 @@ def import_rows(
     the buyer's basket (404 otherwise); an ordered basket answers basket_locked and adds nothing; more lines than a
     basket holds raise 422."""
     confidences = confidences or {}
+    # A filled-in date falls on a weekday the buyer's mandate allows, so the date itself never triggers an approval.
+    mandate = mandates.for_buyer(buyer)
+    weekdays = set(mandate.allowed_delivery_weekdays) if mandate else None
     usable: list[tuple[SheetRow, LineDraft, list[Msg]]] = []
     report: list[ImportRow] = []
     for row in rows:
@@ -196,7 +209,7 @@ def import_rows(
                 )
             )
             continue
-        draft, notes = _draft(row, source, confidences.get(row.row_number), service.stubs, as_of)
+        draft, notes = _draft(row, source, confidences.get(row.row_number), service.stubs, as_of, weekdays)
         usable.append((row, draft, notes))
 
     added = service.add_lines(buyer, basket_id, [d for _, d, _ in usable], dedupe=True)
@@ -210,7 +223,7 @@ def import_rows(
             counts=_counts([]),
             extraction=extraction,
             message_for_user=_join(LOCKED, summary(basket, ordered_note=False)),
-            warnings=warnings_for(basket),
+            warnings=warnings_for(service.backend, basket),
         )
 
     # A line id in `existing` k times was returned for k duplicate rows; one more occurrence is the row that made it.
@@ -255,5 +268,5 @@ def import_rows(
         counts=counts,
         extraction=extraction,
         message_for_user=_join(head, s),
-        warnings=warnings_for(basket),
+        warnings=warnings_for(service.backend, basket),
     )

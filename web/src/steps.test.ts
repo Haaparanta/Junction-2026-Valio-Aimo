@@ -29,6 +29,13 @@ describe("stepper: Need -> Basket -> Quote -> Confirm -> Approval", () => {
     expect(at({ quoteId: "Q-1", lastOutcome: { tool: "place_order", status: "completed", reasonCode: null, at: 1 } })).toBe(5);
     expect(at({ quoteId: "Q-1", order: { quoteId: "Q-0", orderId: "O-0", status: "completed", message: done } })).toBe(2);
   });
+  it("an approved order finishes every step; a rejected or pending one stays at the approval", () => {
+    const placed = { quoteId: "Q-1", orderId: "O-1", status: "completed", message: done };
+    expect(at({ quoteId: "Q-1", approvalId: "A-1", order: placed })).toBe(5);
+    expect(at({ quoteId: "Q-1", approvalId: "A-1", order: { ...placed, status: "requires_escalation" } })).toBe(4);
+    // place_order answered requires_escalation earlier; a completed outcome alone does not skip the approval
+    expect(at({ quoteId: "Q-1", approvalId: "A-1", lastOutcome: { tool: "place_order", status: "completed", reasonCode: null, at: 1 } })).toBe(4);
+  });
   it("a new basket after an approval starts again at the basket step", () => {
     expect(at({ basketId: "B-0A1B2C3D4E", approvalId: "A-1" })).toBe(1);
   });

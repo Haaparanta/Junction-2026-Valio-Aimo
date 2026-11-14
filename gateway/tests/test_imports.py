@@ -106,6 +106,10 @@ def test_next_delivery_date(client, svc):
     assert next_delivery_date(svc.stubs, as_of, "469119") == date(2026, 11, 18)  # Terminal: four days
     assert next_delivery_date(svc.stubs, as_of, "464440") == date(2026, 11, 15)  # never deliverable: the next day
     assert next_delivery_date(svc.stubs, "2026-11-14T18:00:00+02:00", "464076") == date(2026, 11, 16)
+    weekdays = {0, 1, 2, 3, 4}  # Chef Aada's mandate: Monday to Friday
+    assert next_delivery_date(svc.stubs, as_of, None, weekdays) == date(2026, 11, 16)  # Sunday 15.11 skipped
+    assert next_delivery_date(svc.stubs, as_of, "464076", weekdays) == date(2026, 11, 16)
+    assert next_delivery_date(svc.stubs, as_of, "469119", weekdays) == date(2026, 11, 18)
 
 
 def test_an_xlsx_built_in_the_test(chef):
@@ -126,7 +130,8 @@ def test_an_xlsx_built_in_the_test(chef):
     assert (eggs["product_id"], eggs["need_date"], eggs["offer"]["qty"]) == ("472535", "2026-11-17", 2)
     assert line(res, rows[3]["line_id"])["product_id"] == "465731"
     cream = line(res, rows[4]["line_id"])  # four creams, but no amount yet: the amount comes first
-    assert cream["amount"] is None and cream["need_date"] == "2026-11-15"
+    # No date: the next day Chef Aada's mandate allows (Mon-Fri), so not Sunday 15.11, which would need an approval.
+    assert cream["amount"] is None and cream["need_date"] == "2026-11-16"
 
 
 def test_a_single_close_name_waits_for_the_buyer(chef):

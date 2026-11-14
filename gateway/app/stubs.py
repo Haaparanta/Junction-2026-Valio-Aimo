@@ -17,11 +17,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from .contract import (
     Approval,
-    ApprovalResponse,
     Basket,
     ConfirmResponse,
     ContentPerUnit,
@@ -33,7 +32,6 @@ from .contract import (
     OffersRequest,
     OffersResponse,
     Order,
-    OrderResponse,
     PlanQuantityRequest,
     PlanQuantityResponse,
     ProductResponse,
@@ -49,6 +47,7 @@ from .contract import (
 )
 from .fmt import CENT, UNIT_EN, UNIT_FI, at_en, at_fi, day_en, day_fi, fi, helsinki_at, instant, money, num, quoted
 from .identity import Buyer
+from .signing import TYP_QUOTE, canonical, keys, quote_document, sha256_hex
 
 FOOD_VAT = Decimal("13.5")
 BaseUnit = Literal["L", "KG", "PCS"]
@@ -263,6 +262,79 @@ def sha(s: str) -> str:
 def vat_of(net: Decimal, rate: Decimal) -> Decimal:
     """VAT on a line's net total, rounded half-up to cents (F-06)."""
     return (net * rate / 100).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+# ---- quote evidence and validity (PLAN M6.2, M6.4; findings A-01, F-07) ------------------------------------
+
+API_TIME_NOW = "2026-11-14T01:16:59+0200"  # the recorded timeNow of the snapshot the stub rows come from (A-01)
+QUOTE_TTL = timedelta(minutes=15)  # a quoted price holds at most this long after issue
+NET_VALID_TO = date(2026, 12, 31)  # customer net prices seen end 2026-12-31 (A-12); validTo inclusive until Q-06
+
+
+def valid_to(p: P) -> date | None:
+    """The last delivery date the row's price holds for: net prices are time-boxed, list prices are not (F-07)."""
+    return NET_VALID_TO if p.net else None
+
+
+def quote_expiry(issued: datetime, lines: Iterable[tuple[str, str]]) -> datetime:
+    """expiresAt = min(cut-off, end of the validTo day, issue + TTL) over the (product_id, delivery_date) lines."""
+    times = [issued + QUOTE_TTL]
+    for product_id, delivery in lines:
+        p = PRODUCTS.get(product_id)
+        if p is None:
+            continue
+        if (ob := order_by(p, date.fromisoformat(delivery))) is not None:
+            times.append(ob)
+        if (vt := valid_to(p)) is not None:
+            times.append(helsinki_at(vt + timedelta(days=1), "00:00"))  # the end of the validTo day, Helsinki
+    return min(times)
+
+
+def stub_responses(lines: list[QuoteLine]) -> tuple[dict, dict]:
+    """The /price and /availability answers the quote's lines were read from, as the stub rows stand for them."""
+    rows = [(x, PRODUCTS[x.product_id]) for x in lines if x.product_id in PRODUCTS]
+    price = {
+        "timeNow": API_TIME_NOW,
+        "products": [
+            {
+                "productId": p.id,
+                "salesUnit": p.api_unit,
+                "catalogPrice": {"value": money(p.price)},
+                "netPriceFound": p.net,
+                "tax": {"taxRate": str(p.vat)},
+            }
+            for _, p in rows
+        ],
+    }
+    availability = {
+        "timeNow": API_TIME_NOW,
+        "products": [
+            {
+                "productId": p.id,
+                "requestedDate": x.delivery_date,
+                "logisticModel": p.logistics,
+                "closingTime": ob.isoformat() if (ob := order_by(p, date.fromisoformat(x.delivery_date))) else None,
+                "stock": p.stock,
+                "stockQty": p.stock_qty,
+            }
+            for x, p in rows
+        ],
+    }
+    return price, availability
+
+
+def stub_evidence(lines: list[QuoteLine]) -> Evidence:
+    """Which snapshot a quote came from (M6.2): the API's timeNow and the SHA-256 of each canonical response."""
+    return Evidence(
+        api_time_now=API_TIME_NOW,
+        response_sha256=[sha256_hex(canonical(r)) for r in stub_responses(lines)],
+        stub=True,
+    )
+
+
+def sign_quote(q: Quote) -> Quote:
+    """Set quote_jws: ES256 over the canonical quote without its jws field and confirmation state (M6.3)."""
+    return q.model_copy(update={"quote_jws": keys().quotes.sign(quote_document(q), TYP_QUOTE)})
 
 
 def invented_warnings(ids: Iterable[str | None]) -> list[str]:
@@ -673,24 +745,40 @@ def substitutes(req: SubstitutesRequest) -> SubstitutesResponse:
 
 
 class StubState:
-    """Offers, quotes and orders, in memory. Idempotent by (buyer, offer) and (conversation or buyer, quote)."""
+    """Quotes, orders and approvals, in memory. Quotes are idempotent by (buyer, offer); the order and approval logic
+    (PLAN M8, M9) is in orders.py, which keeps its records here. Product facts, prices and the offers made come from
+    `backend` (app/backend.py: this module's catalogue, or the real one), picked once by create_app."""
 
-    def __init__(self) -> None:
+    def __init__(self, backend: Any = None) -> None:
+        if backend is None:
+            from .backend import StubBackend  # backend.py imports this module
+
+            backend = StubBackend()
+        self.backend = backend
         self.lock = threading.Lock()
         self.quotes: dict[str, Quote] = {}
         self.orders: dict[str, Order] = {}
         self.approvals: dict[str, Approval] = {}
-        self.offers: dict[str, Offer] = {}
-        self.offer_sets: dict[str, OffersResponse] = {}
-        self.offer_requests: dict[str, OffersRequest] = {}  # what each offer set was asked for ("Add to basket")
+        self.order_meta: dict[str, Any] = {}  # order_id -> orders.OrderMeta (owner, the quote as ordered, ...)
+        self.idempotency: dict[str, tuple[str, str]] = {}  # key -> (payload fingerprint, order_id)
+        self.seq = 0  # orders and approvals in the order they were made (newest first in the approver's list)
+        self.audit: Any = None  # audit.AuditLog over the app's store, set by create_app (PLAN M10)
+
+    @property
+    def offers(self) -> dict[str, Offer]:
+        """Every offer the backend made, by offer_id."""
+        return self.backend.registered_offers
+
+    @property
+    def offer_sets(self) -> dict[str, OffersResponse]:
+        return self.backend.offer_sets
+
+    @property
+    def offer_requests(self) -> dict[str, OffersRequest]:
+        return self.backend.offer_requests
 
     def get_offers(self, req: OffersRequest, as_of: str) -> OffersResponse:
-        res = offers(req, as_of)
-        with self.lock:
-            self.offers.update({o.offer_id: o for o in res.options})
-            self.offer_sets[res.offer_set_id] = res
-            self.offer_requests[res.offer_set_id] = req
-        return res
+        return self.backend.offers(req, as_of)
 
     def get_offer_set(self, offer_set_id: str) -> OffersResponse | None:
         return self.offer_sets.get(offer_set_id)
@@ -706,59 +794,56 @@ class StubState:
         (None, None) when the product is not in the catalogue or is not priced per `unit`. The offer is registered,
         so create_quote and a basket line can use its offer_id.
         """
-        p = PRODUCTS.get(product_id)
-        if p is None or p.base_unit != unit:
-            return None, None
-        d, amt = date.fromisoformat(need_date), Decimal(str(amount))
-        qty, ob, blocking = assess(p, amt, d, instant(as_of))
-        if blocking or ob is None:
-            return None, refusal(p, qty, d, ob, blocking)
-        offer_set_id = "OP-" + sha(f"{p.id}|{num(amt)}|{unit}|{need_date}")[:8].upper()  # one product, one need
-        o = make_offer(p, qty, d, ob, offer_set_id, "other")
-        with self.lock:
-            self.offers[o.offer_id] = o
-        return o, None
+        return self.backend.price_product(product_id, amount, unit, need_date, as_of)
+
+    def _expiry(self, issued: datetime, lines: list[QuoteLine], order_by: Iterable[str]) -> datetime:
+        """The backend's expiry (TTL, cut-offs, validTo), and never after an offer's own order-by time."""
+        return min(
+            [
+                self.backend.quote_expiry(issued, [(x.product_id, x.delivery_date) for x in lines]),
+                *(instant(ob) for ob in order_by if ob),
+            ]
+        )
 
     def create_quote(self, buyer: Buyer, offer_id: str, as_of: str) -> QuoteResponse | None:
         o = self.offers.get(offer_id)
-        p = PRODUCTS.get(o.product_id) if o else None
+        p = self.backend.product(o.product_id) if o else None
         if o is None or p is None:
             return None
         quote_id = "Q-" + sha(f"{buyer.buyer_id}|{offer_id}")[:10].upper()
         with self.lock:
             q = self.quotes.get(quote_id)
             if q is None:
-                qty = o.qty
-                line_net = p.price * qty
-                line_vat = vat_of(line_net, p.vat)
+                line_net = Decimal(o.total_net)
+                line_vat = vat_of(line_net, p.vat_rate)
                 issued = datetime.fromisoformat(as_of)
+                line = QuoteLine(
+                    line_id=1,
+                    product_id=o.product_id,
+                    name_fi=o.name_fi,
+                    api_unit=o.api_unit,
+                    qty=o.qty,
+                    unit_price_net=o.unit_price_net,
+                    line_net=money(line_net),
+                    vat_rate=str(p.vat_rate),
+                    line_vat=money(line_vat),
+                    line_gross=money(line_net + line_vat),
+                    delivery_date=o.delivery_date,
+                )
                 q = Quote(
                     quote_id=quote_id,
                     status="ready_for_complete",
                     buyer_id=buyer.buyer_id,
-                    lines=[
-                        QuoteLine(
-                            line_id=1,
-                            product_id=p.id,
-                            name_fi=p.name,
-                            api_unit=p.api_unit,
-                            qty=qty,
-                            unit_price_net=money(p.price),
-                            line_net=money(line_net),
-                            vat_rate=str(p.vat),
-                            line_vat=money(line_vat),
-                            line_gross=money(line_net + line_vat),
-                            delivery_date=o.delivery_date,
-                        )
-                    ],
+                    lines=[line],
                     total_net=money(line_net),
                     total_vat=money(line_vat),
                     total_gross=money(line_net + line_vat),
                     delivery_date=o.delivery_date,
                     issued_at=issued.isoformat(),
-                    expires_at=(issued + timedelta(minutes=15)).isoformat(),
-                    evidence=Evidence(api_time_now="2026-11-14T01:16:59+0200", stub=True),
+                    expires_at=self._expiry(issued, [line], [o.order_by]).isoformat(),
+                    evidence=self.backend.quote_evidence([line]),
                 )
+                q = sign_quote(q)
                 self.quotes[quote_id] = q
         return QuoteResponse(
             status=q.status,
@@ -774,7 +859,7 @@ class StubState:
                 f"(EUR {q.total_gross} incl. VAT). The price is fixed until {q.expires_at[11:16]}. Please confirm on "
                 "screen.",
             ),
-            warnings=["stub: quote is not signed yet (M6)", *invented_warnings([p.id])],
+            warnings=self.backend.invented_warnings([o.product_id]),
         )
 
     def create_basket_quote(self, buyer: Buyer, basket: Basket, as_of: str) -> Quote:
@@ -782,7 +867,8 @@ class StubState:
 
         Each line is priced as its basket line was: VAT per line on the net total at the row's rate, rounded
         half-up (F-06). Totals are the sums of the lines; delivery_date is the earliest line date; expires_at is
-        the earliest of issue + 15 min and every line's order-by time.
+        the earliest of issue + 15 min, every line's order-by time and the end of each price's validTo day (F-07).
+        The quote is signed (M6.3) and carries the snapshot it was priced from (M6.2).
         """
         priced = [line for line in basket.lines if line.status == "priced" and line.offer is not None]
         if not priced:
@@ -796,9 +882,10 @@ class StubState:
                     o = line.offer
                     if o is None:
                         continue
+                    info = self.backend.product(o.product_id)
                     unit_price = Decimal(o.unit_price_net)
-                    net = unit_price * o.qty
-                    rate = PRODUCTS[o.product_id].vat
+                    net = Decimal(o.total_net)
+                    rate = info.vat_rate if info else FOOD_VAT
                     vat = vat_of(net, rate)
                     lines.append(
                         QuoteLine(
@@ -816,7 +903,7 @@ class StubState:
                         )
                     )
                 issued = instant(as_of)
-                expires = min([issued + timedelta(minutes=15), *(instant(x.offer.order_by) for x in priced if x.offer)])
+                expires = self._expiry(issued, lines, [x.offer.order_by for x in priced if x.offer])
                 q = Quote(
                     quote_id=quote_id,
                     status="ready_for_complete",
@@ -830,8 +917,9 @@ class StubState:
                     basket_version=basket.version,
                     issued_at=issued.isoformat(),
                     expires_at=expires.isoformat(),
-                    evidence=Evidence(api_time_now="2026-11-14T01:16:59+0200", stub=True),
+                    evidence=self.backend.quote_evidence(lines),
                 )
+                q = sign_quote(q)
                 self.quotes[quote_id] = q
         return q
 
@@ -844,6 +932,17 @@ class StubState:
             q = self.get_quote(buyer, quote_id)
             if q is None:
                 return None
+            if not q.confirmed and instant(q.expires_at) <= instant(now):  # an expired price cannot be confirmed
+                return ConfirmResponse(
+                    status="incomplete",
+                    reason_code="quote_expired",
+                    quote_id=quote_id,
+                    confirmed=False,
+                    message_for_user=Msg(
+                        fi="Tarjouksen hinta ei ole enää voimassa. Tehdään uusi tarjous.",
+                        en="The quote's fixed price has expired. Let's make a new quote.",
+                    ),
+                )
             if not q.confirmed:
                 q = q.model_copy(update={"confirmed": True, "confirmed_at": now})
                 self.quotes[quote_id] = q
@@ -852,116 +951,4 @@ class StubState:
             confirmed=True,
             confirmation_ref="C-" + quote_id[2:],
             message_for_user=Msg(fi="Vahvistettu.", en="Confirmed."),
-        )
-
-    def place_order(self, buyer: Buyer, quote_id: str, idem: str, as_of: str) -> OrderResponse:
-        with self.lock:
-            q = self.get_quote(buyer, quote_id)
-            if q is None:
-                return OrderResponse(
-                    status="incomplete",
-                    reason_code="not_found",
-                    message_for_user=Msg(
-                        fi="Tarjousta ei löytynyt. Pyydä uusi tarjous.",
-                        en="I could not find that quote. Let's make a new one.",
-                    ),
-                )
-            if not q.confirmed:
-                return OrderResponse(
-                    status="incomplete",
-                    reason_code="confirmation_required",
-                    message_for_user=Msg(
-                        fi="Tilaus pitää ensin vahvistaa näytöltä.",
-                        en="The buyer must confirm the quote on screen first.",
-                    ),
-                )
-            order_id = "O-" + sha(idem)[:10].upper()
-            o = self.orders.get(order_id)
-            if o is None and Decimal(q.total_net) <= Decimal(buyer.order_cap_eur):
-                o = Order(  # within the buyer's order cap: no approval needed
-                    order_id=order_id,
-                    quote_id=quote_id,
-                    status="completed",
-                    total_net=q.total_net,
-                    total_gross=q.total_gross,
-                    delivery_date=q.delivery_date,
-                    created_at=as_of,
-                )
-                self.orders[order_id] = o
-            if o is None:
-                approval_id = "A-" + order_id[2:]
-                decide_by = "2026-11-15T16:00:00+02:00"
-                o = Order(
-                    order_id=order_id,
-                    quote_id=quote_id,
-                    status="requires_escalation",
-                    total_net=q.total_net,
-                    total_gross=q.total_gross,
-                    delivery_date=q.delivery_date,
-                    approval_id=approval_id,
-                    approval_url=f"/approvals/{approval_id}",
-                    created_at=as_of,
-                )
-                self.orders[order_id] = o
-                self.approvals[approval_id] = Approval(
-                    approval_id=approval_id,
-                    status="requires_escalation",
-                    order_id=order_id,
-                    quote_id=quote_id,
-                    reasons=[f"OVER_ORDER_CAP: EUR {q.total_net} is above the EUR {buyer.order_cap_eur} order cap"],
-                    decide_by=decide_by,
-                    approver_role="head_chef",
-                )
-        return self.order_response(o, buyer)
-
-    def order_response(self, o: Order, buyer: Buyer) -> OrderResponse:
-        if o.status == "requires_escalation":
-            msg = Msg(
-                fi=f"Tilaus {o.total_net} € ylittää {buyer.order_cap_eur} euron tilausrajasi, joten se lähti "
-                "esihenkilösi hyväksyttäväksi. Hyväksyntä tarvitaan su 15.11. klo 16.00 mennessä.",
-                en=f"The order of EUR {o.total_net} is above your EUR {buyer.order_cap_eur} order cap, so it went to "
-                "your manager for approval. It needs approval by Sun 15.11 16:00.",
-            )
-            reason = "limit_exceeded"
-        elif o.status == "canceled":
-            msg, reason = Msg(fi="Tilaus on peruttu.", en="The order is canceled."), None
-        else:
-            msg, reason = Msg(fi=f"Tilaus {o.order_id} on vahvistettu.", en=f"Order {o.order_id} is confirmed."), None
-        return OrderResponse(
-            status=o.status,
-            reason_code=reason,
-            order_id=o.order_id,
-            order=o,
-            approval_id=o.approval_id,
-            approval_url=o.approval_url,
-            total_net=o.total_net,
-            message_for_user=msg,
-            warnings=["stub: policy and approval are canned until M7-M9"],
-        )
-
-    def get_order(self, buyer: Buyer, order_id: str) -> OrderResponse | None:
-        o = self.orders.get(order_id)
-        if o is None or self.get_quote(buyer, o.quote_id) is None:
-            return None
-        return self.order_response(o, buyer)
-
-    def cancel_order(self, buyer: Buyer, order_id: str) -> OrderResponse | None:
-        with self.lock:
-            o = self.orders.get(order_id)
-            if o is None or self.get_quote(buyer, o.quote_id) is None:
-                return None
-            if o.status != "completed":
-                o = o.model_copy(update={"status": "canceled"})
-                self.orders[order_id] = o
-        return self.order_response(o, buyer)
-
-    def get_approval(self, buyer: Buyer, approval_id: str) -> ApprovalResponse | None:
-        a = self.approvals.get(approval_id)
-        if a is None or self.get_quote(buyer, a.quote_id) is None:
-            return None
-        return ApprovalResponse(
-            status=a.status,
-            approval_id=a.approval_id,
-            approval=a,
-            message_for_user=Msg(fi="Odottaa esihenkilön hyväksyntää.", en="Waiting for the manager's approval."),
         )

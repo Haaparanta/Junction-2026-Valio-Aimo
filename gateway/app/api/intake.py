@@ -17,11 +17,12 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, Path, UploadFile
 from fastapi.responses import Response
 
+from .. import audit
 from ..basket import BasketsDep
 from ..contract import DishJobResponse, DishResponse, ImportResponse, ListExtraction, PlanDishRequest
 from ..dishes import AI_UNAVAILABLE, create_job, get_job, plan_dish, run_job
 from ..fmt import instant, to_helsinki
-from ..identity import CallerDep, SettingsDep, WebBuyerDep
+from ..identity import Buyer, CallerDep, SettingsDep, WebBuyerDep
 from ..images import MAX_IMAGE_BYTES, ImageError, read_image
 from ..imports import import_rows
 from ..llm import LLMDep, LLMRefused, LLMUnavailable
@@ -40,6 +41,23 @@ BasketIdForm = Annotated[
     ),
 ]
 JobIdPath = Annotated[str, Path(pattern=r"^J-[0-9A-F]{10}$", description="job_id exactly as plan_dish returned it.")]
+
+
+def logged(
+    res: ImportResponse, buyer: Buyer, baskets: BasketsDep, kind: str, as_of: str, data: bytes
+) -> ImportResponse:
+    """One audit event per import (M10.2): what was read and what it became, never the file or the photo itself."""
+    audit.log(
+        baskets.stubs,
+        buyer,
+        "basket.import",
+        as_of=as_of,
+        response=res,
+        inputs={"kind": kind, "file_sha256": audit.sha256_hex(data), "rows": len(res.rows)},
+        basket_id=res.basket_id,
+        summary=f"{kind} import into {res.basket_id}: {len(res.rows)} rows, {res.counts}",
+    )
+    return res
 
 
 def _read(upload: UploadFile, limit: int) -> bytes:
@@ -65,7 +83,8 @@ def import_sheet(
         rows = read_sheet(file.filename or "", file.content_type or "", data)
     except SheetError as e:
         raise HTTPException(e.status_code, e.message.en) from None
-    return import_rows(baskets, buyer, basket_id, rows, "import", settings.as_of)
+    res = import_rows(baskets, buyer, basket_id, rows, "import", settings.as_of)
+    return logged(res, buyer, baskets, "sheet", settings.as_of, data)
 
 
 @router.get("/template.xlsx", tags=["ui"], response_class=Response)
@@ -145,7 +164,8 @@ def import_image(
         log.info("photo import: nothing read (%s)", e)
         extraction = ListExtraction(items=[], handwritten=False, unreadable=[], need_date=None)
     rows, confidences = _rows(extraction, today)
-    return import_rows(baskets, buyer, basket_id, rows, "image", settings.as_of, confidences, extraction=extraction)
+    res = import_rows(baskets, buyer, basket_id, rows, "image", settings.as_of, confidences, extraction=extraction)
+    return logged(res, buyer, baskets, "photo", settings.as_of, data)
 
 
 # ---- a dish (M27) ----

@@ -114,3 +114,44 @@ Aino adds each product you name to one basket, once `provision.py push` has give
 Then press **Get one quote for all**. The gateway prices every line, and quotes the basket only when no line still needs a choice, an amount or a later date.
 
 The photo and the dish need Anthropic credentials in the gateway: `ANTHROPIC_API_KEY` in `.env`, or locally just `ant auth login`. Without them those two routes answer 503 and everything else works. On Cloud Run the key is a secret; see [docs/deploy.md](docs/deploy.md#anthropic-key-photo-and-dish).
+
+## Openness test path
+
+Any MCP client can use the gateway at `/mcp` under the same controls as Aino. It uses streamable HTTP in stateless JSON mode, and `GET /mcp` answers 405. Each external agent has its own bearer key. The gateway stores only the key's SHA-256, in `MCP_AGENT_KEYS`. Every key acts under the external-agent mandate, which is quote only: its `place_order` call counts as its confirmation, and every order it places goes to a human approver (`requires_escalation`).
+
+1. Make a key and register its hash. The key goes into an environment variable and is never printed:
+
+   ```bash
+   export VALIO_MCP_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+   HASH="$(printf %s "$VALIO_MCP_KEY" | shasum -a 256 | cut -d' ' -f1)"
+   echo "MCP_AGENT_KEYS={\"teammate\":\"$HASH\"}" >> .env.gateway   # replace any older MCP_AGENT_KEYS line
+   ```
+
+   Restart the gateway. Behind a tunnel, set `PUBLIC_HOST` too: `/mcp` accepts only `localhost`, `127.0.0.1` and `PUBLIC_HOST` as Host and Origin.
+
+2. List the tools with the MCP Inspector CLI. Without the header you get 401:
+
+   ```bash
+   npx -y @modelcontextprotocol/inspector --cli http://localhost:8000/mcp --transport http \
+     --header "Authorization: Bearer $VALIO_MCP_KEY" --method tools/list
+   ```
+
+3. Add the gateway to Claude Code, then ask Claude for *"1000 litres of lactose-free milk by 2026-11-16"*:
+
+   ```bash
+   claude mcp add --transport http valio-aimo http://localhost:8000/mcp \
+     --header "Authorization: Bearer $VALIO_MCP_KEY"
+   ```
+
+   The shell expands the key into Claude Code's config. Remove the server with `claude mcp remove valio-aimo`.
+
+4. Or use curl. Each call is one JSON-RPC POST:
+
+   ```bash
+   curl -s http://localhost:8000/mcp -H "Authorization: Bearer $VALIO_MCP_KEY" \
+     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_products",
+          "arguments":{"query":"laktoositon maito","heads":["maito"],"must_claims":["FREE_FROM_LACTOSE"]}}}'
+   ```
+
+The tools are `search_products`, `get_product`, `plan_quantity`, `get_offers`, `add_to_basket`, `get_basket`, `update_basket_line`, `remove_basket_line`, `quote_basket`, `create_quote`, `place_order`, `get_order` and `get_approval`. They run the same service functions as REST `/v1`, so both give the same results. Each tool is marked read-only or write, and its output schema comes from the gateway's pydantic models. There is no tool to confirm a quote or to decide an approval. Quote signature verification against the JWKS comes with M6.

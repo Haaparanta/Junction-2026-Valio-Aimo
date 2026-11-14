@@ -99,6 +99,7 @@ def settings(tmp_path) -> Settings:
         elevenlabs_webhook_secret=WEBHOOK_SECRET,
         elevenlabs_agent_id="agent_test",
         web_dist=None,
+        valio_mode="stub",  # the stub catalogue: the suite never depends on the git-ignored data in data/
     )
 
 

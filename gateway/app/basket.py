@@ -2,7 +2,8 @@
 
 A basket belongs to one buyer and lives in SQLite (B-02). Each line keeps its draft (what it asks for) and the
 last priced snapshot. Every change prices the line again in exactly one function, BasketService.price, so the
-gateway decides every number. Quotes, orders and approvals stay in StubState until M6 and M8.
+gateway decides every number. Product facts and prices come from the app's backend (app/backend.py: the stub
+catalogue or the real one); quotes, orders and approvals stay in StubState.
 
 The internal API below (create_basket, get, current, add_lines, update_line, choose_product, remove_line,
 restore_line, quote, mark_quoted, mark_ordered, is_stale) is what the routes call, and what the sheet import, the photo
@@ -23,6 +24,7 @@ from typing import Annotated, Any, Literal, get_args
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from .backend import Backend
 from .contract import (
     Basket,
     BasketDish,
@@ -48,7 +50,7 @@ from .db import Store
 from .fmt import at_en, at_fi, clock_en, clock_fi, day_en, day_fi, fi, ids_en, ids_fi, money, num, quoted, to_helsinki
 from .identity import Buyer, SettingsDep
 from .settings import Settings
-from .stubs import PRODUCTS, StubState, heads_for, invented_warnings, matches, vat_of
+from .stubs import FOOD_VAT, StubState, vat_of
 
 MAX_LINES = 200
 STATUSES: list[LineStatus] = list(get_args(LineStatus))
@@ -345,12 +347,16 @@ def too_many_lines() -> HTTPException:
 
 
 class BasketService:
-    """Baskets in SQLite, priced through StubState. Another buyer's basket is 'not found' (404), never its data."""
+    """Baskets in SQLite, priced through the backend. Another buyer's basket is 'not found' (404), never its data."""
 
     def __init__(self, store: Store, stubs: StubState, settings: Settings) -> None:
         self.store = store
         self.stubs = stubs
         self.settings = settings  # read on every call: the as-of clock may change (tests, demos)
+
+    @property
+    def backend(self) -> Backend:
+        return self.stubs.backend
 
     @contextmanager
     def _tx(self, mode: str = "IMMEDIATE") -> Iterator[sqlite3.Connection]:
@@ -363,42 +369,47 @@ class BasketService:
     def price(self, d: LineDraft, chosen: str | None = None) -> Snapshot:
         """Price one line from its draft. `chosen` keeps the previous pick of a search need while it is an option."""
         pinned = d.product_id  # candidates, even a single one, wait for the buyer's choice
-        p = PRODUCTS.get(pinned) if pinned else None
+        p = self.backend.product(pinned) if pinned else None
         if not pinned and not d.candidates and d.need is None:
             # Nothing in the catalogue to price, so asking for an amount would not help: say it was not found.
             return Snapshot(status="unmatched", message=UNMATCHED)
         if d.amount is None or d.unit is None:
             return Snapshot(
                 status="needs_amount",
-                product_id=p.id if p else None,
-                name_fi=p.name if p else None,
+                product_id=p.product_id if p else None,
+                name_fi=p.name_fi if p else None,
                 message=NEEDS_AMOUNT,
             )
         if pinned and p is None:
             return Snapshot(status="unmatched", message=UNMATCHED)
-        if p is not None and p.base_unit != d.unit:
+        if p is not None and p.base_unit and p.base_unit != d.unit:
             return Snapshot(
-                status="needs_amount", product_id=p.id, name_fi=p.name, message=msg_unit([p.base_unit], p.name)
+                status="needs_amount",
+                product_id=p.product_id,
+                name_fi=p.name_fi,
+                message=msg_unit([p.base_unit], p.name_fi),
             )
         need_date = date.fromisoformat(d.need_date)
         options, refused, units = self._choices(d, d.amount, d.unit)
         if p is not None:  # pinned: that product, with the need's other options as alternatives
-            offer = next((o for o in options if o.product_id == p.id), None)
+            offer = next((o for o in options if o.product_id == p.product_id), None)
             why: NotOffered | None = None
             if offer is None:
-                offer, why = self.stubs.price_product(p.id, d.amount, d.unit, d.need_date, self.settings.as_of)
-            alternatives = [o for o in options if o.product_id != p.id]
+                offer, why = self.backend.price_product(
+                    p.product_id, d.amount, d.unit, d.need_date, self.settings.as_of
+                )
+            alternatives = [o for o in options if o.product_id != p.product_id]
             if offer is not None:
                 return self._priced(d, offer, alternatives)
             flags = why.flags if why else []
             cut = "CUTOFF_PASSED" in flags
             return Snapshot(
                 status="cutoff_passed" if cut else "not_deliverable",
-                product_id=p.id,
-                name_fi=p.name,
+                product_id=p.product_id,
+                name_fi=p.name_fi,
                 alternatives=alternatives,
                 flags=flags,
-                message=msg_cutoff(need_date) if cut else msg_not_deliverable(need_date, p.name),
+                message=msg_cutoff(need_date) if cut else msg_not_deliverable(need_date, p.name_fi),
             )
         if options and d.need is None:  # several matches from a sheet or a photo: the buyer chooses
             return Snapshot(status="needs_choice", alternatives=options, message=msg_choice(len(options)))
@@ -421,41 +432,38 @@ class BasketService:
         matching products are sold in when none is sold in the line's unit."""
         if d.need is not None:
             req = d.offers_request()
-            res = self.stubs.get_offers(req, self.settings.as_of)
-            units = [] if res.counts["candidates"] else self._units(req)
+            res = self.backend.offers(req, self.settings.as_of)
+            units = [] if res.counts["candidates"] else self.backend.units_for(req)
             return res.options, res.not_offered, units
         if not d.candidates:
             return [], [], []
         priced: list[Offer] = []
         refused: list[NotOffered] = []
         units: set[str] = set()
+        variant: dict[str, bool] = {}
         for pid in d.candidates:
-            p = PRODUCTS.get(pid)
+            p = self.backend.product(pid)
             if p is None:
                 continue
-            if p.base_unit != unit:
+            if p.base_unit and p.base_unit != unit:
                 units.add(p.base_unit)
                 continue
-            o, why = self.stubs.price_product(pid, amount, unit, d.need_date, self.settings.as_of)
+            variant[pid] = p.variant
+            o, why = self.backend.price_product(pid, amount, unit, d.need_date, self.settings.as_of)
             if o is not None:
                 priced.append(o)
             elif why is not None:
                 refused.append(why)
         # Keep the matcher's relevance order (a price sort put coffee milk first for 'maito' and jam first for
         # 'mansikka'); the stable sort only moves variants last, also for candidates stored before that order.
-        priced.sort(key=lambda o: PRODUCTS[o.product_id].variant)
+        priced.sort(key=lambda o: variant.get(o.product_id, False))
         return priced, refused, sorted(units)
 
-    @staticmethod
-    def _units(req: OffersRequest) -> list[str]:
-        rows = [p for p in matches(req, heads_for(req)) if req.allow_variants or not p.variant]
-        return sorted({p.base_unit for p in rows})
-
-    @staticmethod
-    def _priced(d: LineDraft, offer: Offer, alternatives: list[Offer]) -> Snapshot:
-        p = PRODUCTS[offer.product_id]
+    def _priced(self, d: LineDraft, offer: Offer, alternatives: list[Offer]) -> Snapshot:
+        p = self.backend.product(offer.product_id)
+        rate = p.vat_rate if p else FOOD_VAT
         net = Decimal(offer.total_net)
-        vat = vat_of(net, p.vat)  # VAT per line on the net total, rounded half-up (F-06)
+        vat = vat_of(net, rate)  # VAT per line on the net total, rounded half-up (F-06)
         return Snapshot(
             status="priced",
             product_id=offer.product_id,
@@ -465,7 +473,7 @@ class BasketService:
             flags=offer.flags,
             message=msg_priced(offer),
             overshoot=num(Decimal(offer.content_total) - Decimal(str(d.amount))),
-            vat_rate=str(p.vat),
+            vat_rate=str(rate),
             line_vat=money(vat),
             line_gross=money(net + vat),
         )
@@ -651,7 +659,7 @@ class BasketService:
                 basket_id=basket_id,
                 open_lines=waiting,
                 message_for_user=incomplete_text(basket),
-                warnings=warnings_for(basket),
+                warnings=warnings_for(self.backend, basket),
             )
         q = self.stubs.create_basket_quote(buyer, basket, self.settings.as_of)
         self.mark_quoted(buyer, basket_id, q.quote_id)
@@ -664,7 +672,7 @@ class BasketService:
             total_gross=q.total_gross,
             expires_at=q.expires_at,
             message_for_user=quote_text(q),
-            warnings=["stub: quote is not signed yet (M6)", *invented_warnings(x.product_id for x in q.lines)],
+            warnings=self.backend.invented_warnings(x.product_id for x in q.lines),
         )
 
     def mark_quoted(self, buyer: Buyer, basket_id: str, quote_id: str) -> Basket:
@@ -950,13 +958,16 @@ def note(outcome: Outcome, line: BasketLine) -> Msg:
 REASON: dict[Outcome, Any] = {"locked": "basket_locked", "unknown_offer": "unknown_id"}
 
 
-def warnings_for(basket: Basket, *lines: BasketLine | None) -> list[str]:
+def warnings_for(backend: Backend, basket: Basket, *lines: BasketLine | None) -> list[str]:
+    """What the backend says about the products shown (the stub catalogue flags its invented rows)."""
     shown = [*basket.lines, *(x for x in lines if x is not None)]
     ids = [i for x in shown for i in (x.product_id, *(o.product_id for o in (x.offer, *x.alternatives) if o))]
-    return invented_warnings(ids)
+    return backend.invented_warnings(ids)
 
 
-def respond(basket: Basket, line: BasketLine | None = None, outcome: Outcome | None = None) -> BasketResponse:
+def respond(
+    backend: Backend, basket: Basket, line: BasketLine | None = None, outcome: Outcome | None = None
+) -> BasketResponse:
     """A BasketResponse: what this call did, then the basket summary, in both languages."""
     if outcome == "locked":
         head: Msg | None = LOCKED
@@ -969,7 +980,7 @@ def respond(basket: Basket, line: BasketLine | None = None, outcome: Outcome | N
         basket=basket,
         line=line,
         message_for_user=s if head is None else Msg(fi=f"{head.fi} {s.fi}", en=f"{head.en} {s.en}"),
-        warnings=warnings_for(basket, line),
+        warnings=warnings_for(backend, basket, line),
     )
 
 
