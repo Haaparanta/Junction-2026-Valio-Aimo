@@ -24,6 +24,7 @@ The same gateway is open to any AI agent over MCP and OpenAPI.
 | [docs/basket-plan.md](docs/basket-plan.md) | M21–M29: one basket filled by voice, clicks, Excel/CSV, a photo of a list or a dish, then one quote. Decisions that join the three briefs in [docs/briefs/](docs/briefs/), build order, cut lines. |
 | [docs/data-and-api-findings.md](docs/data-and-api-findings.md) | What the product data and the mock price/availability API really do: traps, formulas, worked example, exception fixtures, mentor questions. |
 | [docs/tech-research.md](docs/tech-research.md) | Fact-checked notes on ElevenLabs Agents, the React SDK and avatar lip-sync, cow audio, the Python gateway stack and open agent-commerce standards, with version pins. |
+| [video/README.md](video/README.md) | The 50-second low-poly "what if" meme video about Mansikki: how to play, render, change texts and timing, and remake the voices. |
 | [docs/reference/](docs/reference/) | Copies of the challenge OpenAPI spec and the product JSON Schema (both sit behind the portal login). |
 
 ## Get the challenge data

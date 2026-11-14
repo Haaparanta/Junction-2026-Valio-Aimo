@@ -12,6 +12,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "web", "dev"],
       "port": 5173
+    },
+    {
+      "name": "video",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["video/serve.ts"],
+      "port": 5180
     }
   ]
 }
