@@ -88,10 +88,20 @@ def test_gluten_free_flour_mix():
 def test_temperature_filter():
     frozen = offers(need(query="mansikka", heads=["mansikka"], temperature="frozen", amount=3), AS_OF)
     assert shown(frozen) == {"466932"} and frozen.options[0].qty == 2  # 2 x 2.5 kg
-    assert shown(offers(need(query="mansikka", heads=["mansikka"], temperature="chilled", amount=3), AS_OF)) == set()
+    fresh = offers(need(query="tuoreet mansikat", heads=["mansikka"], temperature="chilled", amount=3), AS_OF)
+    assert shown(fresh) == {"471820"} and fresh.options[0].qty == 2  # 2 x 2 kg of fresh strawberries
     # An unknown temperature class is not a mismatch (D-08): eggs (code 6) stay in a chilled search.
     eggs = need(query="kananmuna", heads=["kananmuna"], temperature="chilled", amount=120, unit="PCS")
     assert shown(offers(eggs, AS_OF)) == {"472535"}
+
+
+def test_a_strawberry_cake_finds_fresh_strawberries_and_jam():
+    """A mansikkakakku plan asks for 'tuoreet mansikat' and 'mansikkahillo'; both are invented stub rows."""
+    fresh = offers(need(query="tuoreet mansikat", heads=["mansikka"], temperature="chilled", amount=4), AS_OF)
+    assert [o.product_id for o in fresh.options] == ["471820"]
+    jam = offers(need(query="mansikkahillo", heads=["hillo", "mansikkahillo"], amount=2), AS_OF)
+    assert [o.product_id for o in jam.options] == ["471837"] and jam.options[0].qty == 1  # 1 x 3 kg
+    assert "stub: invented catalogue values for 471837" in jam.warnings
 
 
 def test_unit_must_match_the_base_unit():

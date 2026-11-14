@@ -36,6 +36,7 @@ class CatalogueEntry:
     product_id: str
     name: str
     gtin: str | None = None
+    variant: bool = False  # coffee milk, portion packs: acceptable only with the buyer's consent, so offered last
 
 
 @dataclass(frozen=True)
@@ -107,7 +108,12 @@ def catalogue_entries() -> tuple[CatalogueEntry, ...]:
     from . import stubs
 
     return tuple(
-        CatalogueEntry(product_id=p.id, name=p.name, gtin=_digits(getattr(p, "gtin", None)) or None)
+        CatalogueEntry(
+            product_id=p.id,
+            name=p.name,
+            gtin=_digits(getattr(p, "gtin", None)) or None,
+            variant=bool(getattr(p, "variant", False)),
+        )
         for p in stubs.PRODUCTS.values()
     )
 
@@ -173,7 +179,7 @@ def close_names(
     if not head:
         return ()
     close = [(e, s) for e, s, _ in _close(words, head, entries) if e.product_id != exclude]
-    return _result("several", "name", close, []).candidates
+    return _result("several", "name", _variants_last(close), []).candidates
 
 
 def _close(
@@ -201,7 +207,15 @@ def _match_name(name: str, entries: tuple[CatalogueEntry, ...]) -> MatchResult:
     if top >= ONE and top_complete and gap >= GAP:
         return _result("one", "name", [(best, top)], [])
     note = "several names are close" if len(close) > 1 else "one name is close but not certain"
-    return _result("several", "name", [(e, s) for e, s, _ in close], [note])
+    return _result("several", "name", _variants_last([(e, s) for e, s, _ in close]), [note])
+
+
+def _variants_last(scored: list[tuple[CatalogueEntry, float]]) -> list[tuple[CatalogueEntry, float]]:
+    """The best MAX_CANDIDATES, non-variants first and each group in score order. A variant (coffee milk, portion
+    packs) needs the buyer's consent (docs/data-and-api-findings.md Q-21), so it is never the first choice for a
+    plain name; it is cut only by score, so a close variant still beats a weak non-variant into the list."""
+    best = scored[:MAX_CANDIDATES]
+    return sorted(best, key=lambda t: bool(getattr(t[0], "variant", False)))  # stable: keeps the score order
 
 
 def _name_points_elsewhere(

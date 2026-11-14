@@ -1,6 +1,6 @@
 # Plan: one basket, five ways in (M21–M29)
 
-> **Status:** plan v1, written Sat 14 Nov 2026 (Helsinki). It extends [PLAN.md](PLAN.md), which ends at M20.
+> **Status:** plan v1, written Sat 14 Nov 2026 (Helsinki); progress updated the same evening, after PRs #5 and #6 merged (see [Status](#status)). It extends [PLAN.md](PLAN.md), which ends at M20.
 >
 > **Sources:** three briefs, kept as written in [briefs/](briefs/):
 > - [basket-import-clickable.md](briefs/basket-import-clickable.md): several products in one order, clickable fields, Excel and CSV import;
@@ -9,7 +9,40 @@
 >
 > Where this plan and a brief disagree, this plan wins. Section 2 lists every change and why.
 
+## Status
+
+Updated Sat 14 Nov 2026, evening (Helsinki). M21–M28 are built and on `main`: PR #5 ("One basket: voice, clicks, Excel/CSV, a photo or a dish, then one quote") and PR #6 ("Basket follow-ups").
+
+| # | Done | Where it is | What is left |
+|---|---|---|---|
+| M21 | Yes | `main` (PR #3 brought the B-14 branches; PR #5 the pins and the contract) | – |
+| M22 | Yes | `basket.py`, `db.py`, `stubs.py`, `api/baskets.py`, `api/tools.py` | – |
+| M23 | Yes, except the live agent | `BasketCard`, `show_basket`, the goal steps in `aino.md`, regenerated `agent/tool_configs/` | `provision.py push` (M29.3) |
+| M24 | Yes, 24a and 24b | `cards/Editors.tsx`, `cards/basket.ts`; PR #6 added a unit control (L, KG, PCS) to the amount editor and put quote lines in two rows on narrow screens | – |
+| M25 | Yes | `match.py`, `imports.py`, `api/intake.py`; templates `web/public/tilauslista-pohja.csv` and `GET /v1/baskets/template.xlsx`. PR #6: a line pinned to one product keeps its close name matches as alternatives | – |
+| M26 | Yes | `llm.py`, `prompts/dish_breakdown.md`, `scripts/eval_dish.py` | – |
+| M27 | Yes, except the live agent | `plan_dish` answers at once with a job; the open page runs it (`POST /v1/baskets/dish-jobs/{id}/run`). Dish form and header on screen | `provision.py push`; the voice path is untested with the live agent |
+| M28 | Yes | `POST /v1/baskets/import-image`, the photo intake on screen. PR #6: the date written on the list dates every line | – |
+| M29 | Partly | See below | 29.3 and 29.4 |
+
+**M29 so far:**
+- **29.1 Repo checks:** green at PR #6, with 571 gateway tests and 184 web tests.
+- **29.2 Browser run:** passed locally as Chef Aada. Choose a product, change the amount and the date, swap a product, remove a line and undo, one quote, Confirm without a call, and the approval card at 1440 px and 375 px. One real photo was read in about 5–9 s and one real dish was planned in about 35 s.
+- **Review:** review rounds were stopped at the user's request, so most of this code has not had an independent review.
+
+**Still open:**
+
+| What | Who | Why |
+|---|---|---|
+| `uv run python agent/provision.py push` (29.3) | The user | The live agent does not know `add_to_basket`, `get_basket`, `update_basket_line`, `remove_basket_line`, `quote_basket`, `plan_dish`, the `show_basket` client tool or the new goal steps until then. The voice path has not been tested with the live agent. |
+| Anthropic credentials on Cloud Run | The user | Without them the photo and dish routes answer 503 on the live service. Add an `ANTHROPIC_API_KEY` secret: [deploy.md](deploy.md#anthropic-key-photo-and-dish). |
+| Demo moment (29.4) | The user | A dish by voice or a photo of a list: still to decide (section 6). |
+
+**Measured:** a dish plan takes 35–51 s on `claude-opus-5-5` at medium effort (median 40 s, `scripts/eval_dish.py`). That is longer than a webhook tool timeout, so `plan_dish` answers at once with a job, and the open page runs it and tells Aino when the dish is ready.
+
 ## Contents
+
+[Status](#status), then:
 
 1. [What we build](#1-what-we-build)
 2. [Decisions that join the briefs](#2-decisions-that-join-the-briefs)
@@ -275,8 +308,18 @@ If time runs short, cut in this order:
 | Cell values, photo text and dish names reach the LLM | Contextual updates are built from gateway fields only; names are quoted as data; one injection case in the tests and in 26.5 |
 | Merge conflicts in hot files | B-09, B-14 and one writer per hot file |
 
-**Open questions for the user:**
+**Open questions for the user** (as asked in plan v1; the answers were added on 14 Nov):
 
 1. **Oats in gluten-free food.** The dish prompt adds `GO` only when the buyer also excludes oats. PLAN M4.3 excludes oats unless the buyer allows them. This plan follows M4.3, the safer default, unless you decide otherwise before 26.3.
+   **Decided:** follow M4.3. Gluten-free excludes `GO` unless the buyer allows oats, and the dish prompt was edited to match.
 2. **Live demo moment:** the dish by voice, or the photo of a list? The other one can be a recorded clip.
+   **Still open.** Both work in the browser; PLAN §3 step 5a marks the choice.
 3. **One basket instead of a separate cart (B-01).** This changes the photo brief's route and table names.
+   **Decided:** one basket. A photo is the `image` source of the basket import; there is no `/api/cart` and no `cart_line` table.
+
+**Decided during the build** (not in plan v1):
+
+| # | Decision | Why |
+|---|---|---|
+| 4 | `VEGETARIAN` also excludes fish, crustaceans and molluscs (`AF`, `AC`, `UM`). Milk and egg stay allowed. | Vegetarian food has no seafood; the expansion is in code, like the others (B-13). |
+| 5 | Allergen codes implied by a diet claim (for example gluten-free adds `UW`, `AW`, `GB`, `NR`, `GO`) are added without a buyer-facing warning. A warning still shows when an allergen the buyer named was missing from the plan, and for every dropped or changed ingredient. | Applying the buyer's diet the same way on every line is expected (B-13); a warning on every line would be noise. |

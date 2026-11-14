@@ -48,7 +48,7 @@ from .db import Store
 from .fmt import at_en, at_fi, clock_en, clock_fi, day_en, day_fi, fi, ids_en, ids_fi, money, num, quoted, to_helsinki
 from .identity import Buyer, SettingsDep
 from .settings import Settings
-from .stubs import PRODUCTS, StubState, heads_for, invented_warnings, matches, rank, vat_of
+from .stubs import PRODUCTS, StubState, heads_for, invented_warnings, matches, vat_of
 
 MAX_LINES = 200
 STATUSES: list[LineStatus] = list(get_args(LineStatus))
@@ -364,6 +364,9 @@ class BasketService:
         """Price one line from its draft. `chosen` keeps the previous pick of a search need while it is an option."""
         pinned = d.product_id  # candidates, even a single one, wait for the buyer's choice
         p = PRODUCTS.get(pinned) if pinned else None
+        if not pinned and not d.candidates and d.need is None:
+            # Nothing in the catalogue to price, so asking for an amount would not help: say it was not found.
+            return Snapshot(status="unmatched", message=UNMATCHED)
         if d.amount is None or d.unit is None:
             return Snapshot(
                 status="needs_amount",
@@ -438,7 +441,9 @@ class BasketService:
                 priced.append(o)
             elif why is not None:
                 refused.append(why)
-        priced.sort(key=lambda o: rank(PRODUCTS[o.product_id]))
+        # Keep the matcher's relevance order (a price sort put coffee milk first for 'maito' and jam first for
+        # 'mansikka'); the stable sort only moves variants last, also for candidates stored before that order.
+        priced.sort(key=lambda o: PRODUCTS[o.product_id].variant)
         return priced, refused, sorted(units)
 
     @staticmethod

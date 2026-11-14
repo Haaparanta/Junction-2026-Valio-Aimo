@@ -8,7 +8,7 @@ One container (see `Dockerfile`) runs the FastAPI gateway and serves the built b
 | Region | `europe-north1` (Finland) |
 | Service | `valio-aimo` |
 | Scaling | `--min-instances 1 --max-instances 1 --no-cpu-throttling`: always warm, because cold starts exceed the 20 s / 30 s tool timeouts (tech-research §7) |
-| Secrets (Secret Manager) | `gateway-platform-key` → `GATEWAY_PLATFORM_KEY`, `elevenlabs-api-key` → `ELEVENLABS_API_KEY` |
+| Secrets (Secret Manager) | `gateway-platform-key` → `GATEWAY_PLATFORM_KEY`, `elevenlabs-api-key` → `ELEVENLABS_API_KEY`; still to add: `anthropic-api-key` → `ANTHROPIC_API_KEY` ([below](#anthropic-key-photo-and-dish)) |
 | Plain env | `ELEVENLABS_AGENT_ID`, `PUBLIC_HOST`; the image sets `COOKIE_SECURE=true`, `DB_PATH=/tmp/gateway.db` |
 
 **State is in memory.** SQLite lives in `/tmp` on the single instance, and the contract stubs keep quotes and orders in memory. A redeploy or restart forgets sessions, quotes and orders. That is fine for the stubs. M10 (audit) needs persistent storage, for example Cloud SQL or a mounted volume.
@@ -46,6 +46,38 @@ uv run python -c "import sys; sys.path.insert(0,'gateway'); from app.settings im
 uv run python agent/provision.py push --host $HOST   # same value into the ElevenLabs workspace secret
 gcloud run services update valio-aimo --project famous-hull-514004-t9 --region europe-north1   # new revision reads :latest
 ```
+
+## Anthropic key (photo and dish)
+
+The photo of a list and the dish plan call Claude from the gateway (basket-plan B-08). Without a key, `POST /v1/baskets/import-image` and the dish routes answer 503 on Cloud Run; everything else works. The service has no key yet, so add one as a secret, like the other two. Run these yourself; build sessions do not change the deploy.
+
+1. Store the key. `read -s` keeps it out of the shell history:
+
+   ```bash
+   read -s ANTHROPIC_KEY && printf %s "$ANTHROPIC_KEY" | \
+     gcloud secrets create anthropic-api-key --project famous-hull-514004-t9 --replication-policy automatic --data-file=-
+   unset ANTHROPIC_KEY
+   ```
+
+2. Let the service read it. The service runs as its runtime service account; if the first command prints nothing, it is the default compute account, `854901616539-compute@developer.gserviceaccount.com`:
+
+   ```bash
+   SA=$(gcloud run services describe valio-aimo --project famous-hull-514004-t9 --region europe-north1 \
+     --format='value(spec.template.spec.serviceAccountName)')
+   gcloud secrets add-iam-policy-binding anthropic-api-key --project famous-hull-514004-t9 \
+     --member serviceAccount:${SA:-854901616539-compute@developer.gserviceaccount.com} --role roles/secretmanager.secretAccessor
+   ```
+
+3. Add it to the service. `--update-secrets` keeps the other two secrets:
+
+   ```bash
+   gcloud run services update valio-aimo --project famous-hull-514004-t9 --region europe-north1 \
+     --update-secrets ANTHROPIC_API_KEY=anthropic-api-key:latest
+   ```
+
+4. Check: sign in as Chef Aada on the live site and send a photo of a list with **Photo to basket**. The lines appear in about 5–9 s instead of a 503.
+
+`VISION_MODEL` and `DISH_MODEL` default to `claude-opus-5-5`, so no env var is needed. If you redeploy with the full `gcloud run deploy` command above, add `ANTHROPIC_API_KEY=anthropic-api-key:latest` to its `--set-secrets`, because `--set-secrets` replaces the whole list. To rotate the key, add a version with `gcloud secrets versions add anthropic-api-key --project famous-hull-514004-t9 --data-file=-`, then run `gcloud run services update` as in step 3 so a new revision reads `:latest`.
 
 ## Logs
 

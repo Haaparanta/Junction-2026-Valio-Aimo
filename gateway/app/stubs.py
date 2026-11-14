@@ -202,6 +202,11 @@ PRODUCTS: dict[str, P] = {p.id: p for p in [
     P("466932", "Pakkasmarja mansikka 2,5 kg pakaste", "ST", D("2.5"), D("13.70"), False, "stock",
       base_unit="KG", temperature="frozen", category="41510",
       brand="Pakkasmarja", vendor="PAKKASMARJA OY PAKASTE", invented=True),
+    # A dish plan for mansikkakakku asks for fresh strawberries and strawberry jam; both rows invented.
+    P("471820", "Tuore kotimainen mansikka 2 kg", "ST", D(2), D("17.80"), False, "stock",
+      base_unit="KG", category="13410", invented=True),
+    P("471837", "Mansikkahillo 3 kg", "ST", D(3), D("13.20"), False, "stock",
+      base_unit="KG", temperature="ambient", category="22410", invented=True),
     # X-30: 0.65 EUR/kg, Stock. The name and the 25 kg sack invented.
     P("470961", "Yleisperuna 25 kg", "SK", D(25), D("16.25"), False, "stock",
       base_unit="KG", temperature="unknown", category="13110", invented=True),
