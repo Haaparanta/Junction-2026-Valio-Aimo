@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mansikki · what if video</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;700&display=block" rel="stylesheet" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+          "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs"
+        }
+      }
+    </script>
+    <style>
+      :root { --paper: #fff4dc; --ink: #111; --pink: #ff8fb4; --yellow: #ffd23f; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #1a1a1f; color: #eee; font: 14px/1.4 "Space Grotesk", system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+      #stage { flex: 1; display: grid; place-items: center; padding: 10px; min-width: 0; }
+      #out { height: calc(100vh - 20px); max-width: 100%; aspect-ratio: 9 / 16; background: #000; box-shadow: 0 0 0 1px #333; }
+      aside { width: 300px; padding: 16px; background: #23232a; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+      aside h1 { font: 20px "Archivo Black", sans-serif; margin: 0; color: var(--pink); }
+      label { display: flex; gap: 8px; align-items: center; }
+      select, button, input[type="range"] { width: 100%; font: inherit; }
+      button { background: var(--yellow); color: var(--ink); border: 3px solid var(--ink); border-radius: 8px; padding: 6px 10px; font-weight: 700; cursor: pointer; box-shadow: 3px 3px 0 #000; }
+      button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
+      .row { display: flex; gap: 6px; }
+      #time { font: 13px ui-monospace, monospace; white-space: pre; color: #bbb; }
+      #status { font: 12px ui-monospace, monospace; color: #9fe; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><canvas id="out" width="1080" height="1920"></canvas></div>
+    <aside>
+      <h1>Mansikki · what if</h1>
+      <select id="view"></select>
+      <div class="row">
+        <button id="prev" title="Previous frame (←)">◀</button>
+        <button id="play" title="Play / pause (space)">▶ Play</button>
+        <button id="next" title="Next frame (→)">▶</button>
+      </div>
+      <input id="scrub" type="range" min="0" max="1000" value="0" />
+      <div id="time"></div>
+      <label><input id="loop" type="checkbox" checked /> Loop</label>
+      <label><input id="mute" type="checkbox" /> Mute</label>
+      <label><input id="safe" type="checkbox" /> Safe areas</label>
+      <button id="render">Render MP4 (this view)</button>
+      <button id="sheet">Contact sheet → out/</button>
+      <div id="status"></div>
+    </aside>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

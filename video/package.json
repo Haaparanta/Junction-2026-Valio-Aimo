@@ -1,0 +1,12 @@
+{
+  "name": "video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node serve.ts",
+    "voices": "node --env-file=../.env.local voices.ts"
+  },
+  "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.78.0"
+  }
+}
