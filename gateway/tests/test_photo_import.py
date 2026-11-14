@@ -125,6 +125,22 @@ def test_a_date_written_on_the_list_dates_every_line(chef, llm):
     assert "no delivery date" not in res["message_for_user"]["en"]
 
 
+def test_an_item_outside_the_catalogue_is_not_found_even_without_a_unit(chef, llm):
+    # A real read of 'kertakäyttöhanskat 2 ltk' (2 boxes of gloves): no product to price, so not 'needs an amount'.
+    gloves = {"raw_text": "kertakäyttöhanskat 2 ltk", "name": "kertakäyttöhanskat", "quantity": 2, "unit": None}
+    llm.extraction = ListExtraction.model_validate(
+        {
+            "handwritten": False,
+            "unreadable": [],
+            "need_date": None,
+            "items": [gloves | {"note": "", "confidence": "high"}],
+        }
+    )
+    res = send(chef, png()).json()
+    assert res["rows"][0]["status"] == "unmatched" and res["counts"]["unmatched"] == 1
+    assert res["basket"]["lines"][0]["status"] == "unmatched"
+
+
 def test_a_photo_adds_to_the_basket_in_focus(chef, listed):
     basket_id = send(chef, png()).json()["basket_id"]
     again = send(chef, png(), basket_id=basket_id).json()
