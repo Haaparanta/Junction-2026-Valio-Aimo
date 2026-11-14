@@ -5,6 +5,8 @@ import "@fontsource/space-grotesk/400.css";
 import "@fontsource/space-grotesk/500.css";
 import "@fontsource/space-grotesk/700.css";
 import { api, type Me } from "./api";
+import { screenFor } from "./approvals/approvals";
+import { ApproverConsole } from "./approvals/ApproverConsole";
 import { Avatar } from "./avatar/Avatar";
 import { BasketCard } from "./cards/BasketCard";
 import { ApprovalCard, OfferCards, QuoteCard } from "./cards/Cards";
@@ -33,6 +35,7 @@ function Login({ onDone }: { onDone: (me: Me) => void }) {
       <p>Aino finds products, checks price and stock, and makes a fixed-price quote. Your limits are enforced by the
         gateway, never by the AI.</p>
       <button className="primary big" onClick={() => void go("chef")}>Sign in as Chef Aada (demo, 500 € cap)</button>
+      <button className="big" onClick={() => void go("head_chef")}>Sign in as Head chef Mikko (approver)</button>
       {err && <p className="error">Could not sign in: {err}. Is the gateway running?</p>}
     </main>
   );
@@ -295,8 +298,13 @@ export function App() {
   useEffect(() => {
     api.me().then(setMe, () => setMe(null));
   }, []);
-  if (me === undefined) return null;
-  if (me === null) return <Login onDone={setMe} />;
+  const screen = screenFor(me);
+  if (screen === "loading") return null;
+  if (screen === "login" || !me) return <Login onDone={setMe} />;
+  if (screen === "approver") {
+    // The approver's own console: no agent, no voice (PLAN M9.3, M9.5).
+    return <ApproverConsole me={me} onSignOut={() => void api.logout().finally(() => setMe(null))} />;
+  }
   return (
     <AgentRoot>
       <ClientTools />
