@@ -533,6 +533,10 @@ class ListExtraction(BaseModel):
     items: list[ListItem] = Field(description="Every list line that was read, in order. Never invent items.")
     handwritten: bool = Field(description="True when the list is handwritten.")
     unreadable: list[str] = Field(description="Parts of the image that could not be read.")
+    need_date: str | None = Field(
+        description="The delivery or order date written on the list as YYYY-MM-DD, or null when none is written. "
+        "Resolve a date without a year such as 'ma 16.11.' to the next such date on or after the given today."
+    )
 
 
 class ImportResponse(Envelope):

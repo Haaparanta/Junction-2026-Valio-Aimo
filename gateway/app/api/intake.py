@@ -10,6 +10,7 @@ tools.py includes this router before baskets.py's, so these paths win over GET /
 """
 
 import logging
+from datetime import date
 from decimal import Decimal
 from typing import Annotated
 
@@ -19,6 +20,7 @@ from fastapi.responses import Response
 from ..basket import BasketsDep
 from ..contract import DishJobResponse, DishResponse, ImportResponse, ListExtraction, PlanDishRequest
 from ..dishes import AI_UNAVAILABLE, create_job, get_job, plan_dish, run_job
+from ..fmt import instant, to_helsinki
 from ..identity import CallerDep, SettingsDep, WebBuyerDep
 from ..images import MAX_IMAGE_BYTES, ImageError, read_image
 from ..imports import import_rows
@@ -79,8 +81,19 @@ def template() -> Response:
 # ---- a photo of a list (M28) ----
 
 
-def _rows(extraction: ListExtraction) -> tuple[list[SheetRow], dict[int, str]]:
-    """The read items as rows: row_number is the item's place on the list (1-based)."""
+def _list_date(extraction: ListExtraction, today: date) -> str | None:
+    """The date written for the whole list, when it is a valid ISO date not before today; None otherwise."""
+    try:
+        d = date.fromisoformat(extraction.need_date or "")
+    except ValueError:
+        return None
+    return d.isoformat() if d >= today else None
+
+
+def _rows(extraction: ListExtraction, today: date) -> tuple[list[SheetRow], dict[int, str]]:
+    """The read items as rows: row_number is the item's place on the list (1-based). Every row gets the list's
+    date when one is written, and otherwise none (the pipeline fills in the next delivery date)."""
+    need_date = _list_date(extraction, today)
     rows: list[SheetRow] = []
     confidences = {}
     for n, item in enumerate(extraction.items, start=1):
@@ -93,7 +106,7 @@ def _rows(extraction: ListExtraction) -> tuple[list[SheetRow], dict[int, str]]:
                 name=(item.name.strip() or raw)[:200],
                 amount=None if item.quantity is None else Decimal(str(item.quantity)),
                 unit=item.unit,
-                need_date=None,
+                need_date=need_date,
                 note=item.note.strip()[:200],
                 raw_text=raw,
             )
@@ -122,15 +135,16 @@ def import_image(
         basket = baskets.get(buyer, basket_id)  # 404 before the Claude call
         if basket.status == "ordered":
             return import_rows(baskets, buyer, basket_id, [], "image", settings.as_of)  # basket_locked
+    today = to_helsinki(instant(settings.as_of)).date()
     try:
-        extraction = llm.read_list(data, media_type)
+        extraction = llm.read_list(data, media_type, today)
     except LLMUnavailable as e:
         log.warning("photo import: the AI service is unavailable (%s)", e)
         raise HTTPException(503, AI_UNAVAILABLE) from None
     except LLMRefused as e:
         log.info("photo import: nothing read (%s)", e)
-        extraction = ListExtraction(items=[], handwritten=False, unreadable=[])
-    rows, confidences = _rows(extraction)
+        extraction = ListExtraction(items=[], handwritten=False, unreadable=[], need_date=None)
+    rows, confidences = _rows(extraction, today)
     return import_rows(baskets, buyer, basket_id, rows, "image", settings.as_of, confidences, extraction=extraction)
 
 

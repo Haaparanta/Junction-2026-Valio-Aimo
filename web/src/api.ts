@@ -71,7 +71,9 @@ export type ImportRow = {
 export type ListItem = {
   raw_text: string; name: string; quantity: number | null; unit: Unit | null; note: string; confidence: Confidence;
 };
-export type ListExtraction = { items: ListItem[]; handwritten: boolean; unreadable: string[] };
+export type ListExtraction = {
+  items: ListItem[]; handwritten: boolean; unreadable: string[]; need_date: string | null;
+};
 export type ImportResponse = Envelope & {
   basket_id: string; basket: Basket; rows: ImportRow[]; counts: Record<string, number>;
   extraction: ListExtraction | null;

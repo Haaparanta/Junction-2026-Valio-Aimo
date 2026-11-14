@@ -17,6 +17,7 @@ LIST = ListExtraction.model_validate(
     {
         "handwritten": True,
         "unreadable": ["a smudge under the last line"],
+        "need_date": None,
         "items": [
             {"raw_text": "maito 20 l", "name": "maito", "quantity": 20, "unit": "L", "note": "", "confidence": "high"},
             {
@@ -104,6 +105,7 @@ def test_a_matched_item_is_priced(chef, llm):
         {
             "handwritten": False,
             "unreadable": [],
+            "need_date": None,
             "items": [
                 {"raw_text": "Eila voi 5 kg", "name": "Valio Eila voi 4x5 kg", "quantity": 10, "unit": "KG"}
                 | {"note": "", "confidence": "high"}
@@ -113,6 +115,14 @@ def test_a_matched_item_is_priced(chef, llm):
     res = send(chef, png()).json()
     butter = res["basket"]["lines"][0]
     assert (res["rows"][0]["status"], butter["product_id"], butter["offer"]["qty"]) == ("priced", "464076", 2)
+
+
+def test_a_date_written_on_the_list_dates_every_line(chef, llm):
+    llm.extraction = LIST.model_copy(update={"need_date": "2026-11-16"})  # 'Tilaus ma 16.11.'
+    res = send(chef, png()).json()
+    assert {x["need_date"] for x in res["basket"]["lines"]} == {"2026-11-16"}
+    assert not any("next delivery date" in x["message"]["en"] for x in res["rows"])
+    assert "no delivery date" not in res["message_for_user"]["en"]
 
 
 def test_a_photo_adds_to_the_basket_in_focus(chef, listed):
@@ -129,12 +139,12 @@ def test_a_refusal_is_200_with_zero_rows(chef, llm):
     assert r.status_code == 200
     res = r.json()
     assert res["rows"] == [] and res["reason_code"] == "not_found" and res["basket"]["lines"] == []
-    assert res["extraction"] == {"items": [], "handwritten": False, "unreadable": []}
+    assert res["extraction"] == {"items": [], "handwritten": False, "unreadable": [], "need_date": None}
     assert "No shopping list lines could be read" in res["message_for_user"]["en"]
 
 
 def test_nothing_readable_is_200_with_zero_rows(chef, llm):
-    llm.extraction = ListExtraction(items=[], handwritten=True, unreadable=["the whole page"])
+    llm.extraction = ListExtraction(items=[], handwritten=True, unreadable=["the whole page"], need_date=None)
     res = send(chef, png()).json()
     assert res["rows"] == [] and res["extraction"]["unreadable"] == ["the whole page"]
     assert res["message_for_user"]["fi"].startswith("Kuvasta ei saatu luettua")
