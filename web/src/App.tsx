@@ -198,7 +198,7 @@ function Workspace({ me }: { me: Me }) {
           <EmptyState onAsk={ask} />
           <ApprovalCard />
           <QuoteCard />
-          <OfferCards />
+          <OfferCards onChoose={ask} />
         </div>
       </main>
       <footer id="privacy">
