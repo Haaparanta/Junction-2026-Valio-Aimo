@@ -336,6 +336,15 @@ button.num-link { font-variant-numeric: tabular-nums; white-space: nowrap; }
                              border-radius: 6px; font-size: 0.88rem; }
 .chip-why { margin: 0; font-weight: 700; }
 .quote button.line-jump { display: inline-block; margin-bottom: 0.1rem; }
+/* Below 600 px a quote line takes two rows: line and product full width, then the quantity left and the total right. */
+@media (max-width: 599.98px) {
+  .quote table, .quote tbody, .quote tfoot { display: block; }
+  .quote tbody tr, .quote tfoot tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .quote tbody tr { grid-template-areas: "prod prod" "qty num"; }
+  .quote tbody td.prod { grid-area: prod; border-bottom: 0; padding-bottom: 0.1rem; overflow-wrap: anywhere; }
+  .quote tbody td.qty { grid-area: qty; }
+  .quote tbody td.num { grid-area: num; }
+}
 .lines tr.line[data-flash] td { background: var(--cyan); }
 .lines tr.line[data-flash="fade"] td { animation: line-flash 1.8s ease-out forwards; }
 @keyframes line-flash { 0%, 55% { background: var(--cyan); } 100% { background: transparent; } }
