@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # Demo as-of clock (PLAN M3.3): every Monday cut-off has passed after Sun 15.11 17:00.
     as_of: str = "2026-11-14T10:00:00+02:00"
     cookie_secure: bool = False  # True behind HTTPS in production
+    web_dist: Path | None = Field(default=REPO_ROOT / "web" / "dist")  # built UI served at / when present
 
 
 @lru_cache

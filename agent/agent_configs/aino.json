@@ -29,7 +29,7 @@
         }
       }
     },
-    "tts": {"model_id": "eleven_v4_turbo", "voice_id": "EXAVITQu4vr4xnSDxMaL"},
+    "tts": {"model_id": "eleven_v4_turbo", "voice_id": "cgSgspJ2msm6clMCkdW9"},
     "asr": {
       "keywords": ["Valio", "Aimo", "Eila", "Arla", "laktoositon", "maitojuoma", "kevytmaitojuoma", "rasvaton", "novobox", "voi", "tilaa", "Mansikki"]
     },

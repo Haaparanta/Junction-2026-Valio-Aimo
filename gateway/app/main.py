@@ -1,6 +1,7 @@
 """App factory. Run: uv run uvicorn app.main:app --app-dir gateway --port 8000"""
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from .api import session, tools, webhooks
 from .db import Store
@@ -30,6 +31,9 @@ def create_app(settings: Settings | None = None, voice: session.VoiceProvider | 
     app.include_router(tools.router)
     app.include_router(session.router)
     app.include_router(webhooks.router)
+    if settings.web_dist and (settings.web_dist / "index.html").is_file():
+        # Production: the built buyer UI from the same origin (cookies, HTTPS for the microphone). Mounted last.
+        app.mount("/", StaticFiles(directory=settings.web_dist, html=True), name="web")
     return app
 
 

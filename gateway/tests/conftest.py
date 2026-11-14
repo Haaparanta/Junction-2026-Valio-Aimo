@@ -29,6 +29,7 @@ def settings(tmp_path) -> Settings:
         gateway_platform_key=PLATFORM_KEY,
         elevenlabs_webhook_secret=WEBHOOK_SECRET,
         elevenlabs_agent_id="agent_test",
+        web_dist=None,
     )
 
 

@@ -1,0 +1,22 @@
+# Never upload secrets, data or local build outputs to Cloud Build.
+.git
+.gitignore
+.github
+.claude
+.env
+.env.*
+!.env.example
+data/
+docs/
+scripts/
+agent/
+node_modules/
+**/node_modules/
+.venv/
+**/__pycache__/
+web/dist/
+*.db
+*.db-*
+.ruff_cache/
+.pytest_cache/
+*.tsbuildinfo

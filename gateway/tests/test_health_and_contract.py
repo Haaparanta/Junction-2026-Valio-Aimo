@@ -53,3 +53,15 @@ def test_agent_request_schemas_are_flat_and_described(settings):
 
 def test_tools_need_a_caller(client):
     assert client.post("/v1/offers", json={}).status_code == 401
+
+
+def test_serves_built_web_app_last(tmp_path, settings):
+    from fastapi.testclient import TestClient
+
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist" / "index.html").write_text("<!doctype html><title>Aino</title>")
+    settings.web_dist = tmp_path / "dist"
+    c = TestClient(create_app(settings))
+    assert "Aino" in c.get("/").text
+    assert c.get("/health").json()["status"] == "ok"  # API routes still win
+    assert c.post("/v1/offers", json={}).status_code == 401

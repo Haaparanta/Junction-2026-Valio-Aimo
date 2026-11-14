@@ -4,15 +4,111 @@
  */
 import type { Mood } from "./mood";
 
-type Contour = { f0: number[]; dur: number; formant: number; count?: number };
+/**
+ * A cow's moo, roughly: a nasal "mmm" (mouth closed, energy below 300 Hz) that opens into a long "ooo"/"aw"
+ * (formants near 450-700 Hz and 1,000-1,300 Hz), voiced at 100-200 Hz with a rough, breathy source, the pitch
+ * rising into the call and sagging at the end. f0 points are spread evenly over the call.
+ */
+type Contour = { f0: number[]; dur: number; open: number; loud: number; count?: number };
 
-const CONTOURS: Record<Mood, Contour> = {
-  greet: { f0: [95, 125, 110, 85], dur: 1.4, formant: 650 },
-  happy: { f0: [110, 135, 120], dur: 0.6, formant: 750, count: 2 },
-  question: { f0: [95, 100, 150], dur: 1.1, formant: 700 },
-  alarmed: { f0: [190, 210, 120], dur: 0.9, formant: 900 },
-  celebrate: { f0: [120, 160, 190, 170], dur: 1.2, formant: 850 },
+export const CONTOURS: Record<Mood, Contour> = {
+  greet: { f0: [105, 140, 150, 120, 95], dur: 2.0, open: 1, loud: 0.8 },
+  happy: { f0: [120, 155, 135], dur: 0.95, open: 0.9, loud: 0.7, count: 2 },
+  question: { f0: [110, 120, 125, 175], dur: 1.5, open: 0.9, loud: 0.75 },
+  alarmed: { f0: [170, 215, 205, 140], dur: 1.3, open: 1.1, loud: 1 },
+  celebrate: { f0: [125, 165, 190, 185, 150], dur: 2.1, open: 1.1, loud: 0.9 },
 };
+
+/** Schedules one moo on any (also offline) audio context; returns its end time and sources. */
+export function scheduleMoo(ctx: BaseAudioContext, out: AudioNode, t0: number, c: Contour) {
+  const t1 = t0 + c.dur;
+  const tOpen = t0 + Math.min(0.35, c.dur * 0.22); // "mmm" -> "ooo"
+  const tClose = t1 - Math.min(0.4, c.dur * 0.25);
+  const sources: AudioScheduledSourceNode[] = [];
+
+  // Source: two slightly detuned saws, a subharmonic for roughness, and breath noise.
+  const pitch = ctx.createConstantSource();
+  const step = c.dur / (c.f0.length - 1);
+  pitch.offset.setValueAtTime(c.f0[0] ?? 120, t0);
+  c.f0.forEach((f, i) => i > 0 && pitch.offset.linearRampToValueAtTime(f, t0 + i * step));
+  const wobble = ctx.createOscillator(); // slow, uneven vibrato
+  wobble.frequency.value = 4.3;
+  const wobbleDepth = ctx.createGain();
+  wobbleDepth.gain.value = 2.5;
+  wobble.connect(wobbleDepth);
+  const voice = ctx.createGain();
+  voice.gain.value = 0.5;
+  for (const [type, ratio, detune, level] of [
+    ["sawtooth", 1, -6, 0.6], ["sawtooth", 1, 7, 0.5], ["square", 0.5, 0, 0.04],
+  ] as const) {
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.value = 0;
+    o.detune.value = detune;
+    const scale = ctx.createGain();
+    scale.gain.value = ratio;
+    pitch.connect(scale).connect(o.frequency);
+    wobbleDepth.connect(o.frequency);
+    const g = ctx.createGain();
+    g.gain.value = level;
+    o.connect(g).connect(voice);
+    sources.push(o);
+  }
+  const noiseBuf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * (c.dur + 0.1)), ctx.sampleRate);
+  const nd = noiseBuf.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  const noise = ctx.createBufferSource();
+  noise.buffer = noiseBuf;
+  const breath = ctx.createBiquadFilter();
+  breath.type = "bandpass";
+  breath.frequency.value = 1400;
+  breath.Q.value = 0.7;
+  const breathGain = ctx.createGain();
+  breathGain.gain.value = 0.05;
+  noise.connect(breath).connect(breathGain).connect(voice);
+  sources.push(noise, pitch, wobble);
+
+  // Vocal tract: nasal low-pass that opens, plus two moving formants in parallel.
+  const tract = ctx.createGain();
+  const nasal = ctx.createBiquadFilter();
+  nasal.type = "lowpass";
+  nasal.Q.value = 0.8;
+  nasal.frequency.setValueAtTime(320, t0);
+  nasal.frequency.linearRampToValueAtTime(1800 * c.open, tOpen + 0.15);
+  nasal.frequency.setValueAtTime(1800 * c.open, tClose);
+  nasal.frequency.linearRampToValueAtTime(380, t1);
+  voice.connect(nasal);
+  for (const [f, q, g] of [[[300, 650, 480], 4, 1.0], [[900, 1200, 950], 6, 0.55]] as const) {
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = q;
+    bp.frequency.setValueAtTime(f[0], t0);
+    bp.frequency.linearRampToValueAtTime(f[1] * c.open, tOpen + 0.2);
+    bp.frequency.setValueAtTime(f[1] * c.open, tClose);
+    bp.frequency.linearRampToValueAtTime(f[2], t1);
+    const bg = ctx.createGain();
+    bg.gain.value = g * 2.2;
+    nasal.connect(bp).connect(bg).connect(tract);
+  }
+  const body = ctx.createGain(); // keep some of the full nasal sound under the formants
+  body.gain.value = 0.35;
+  nasal.connect(body).connect(tract);
+
+  // Envelope: soft "mmm" onset, full voice once open, a sagging fade.
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0.0001, t0);
+  env.gain.exponentialRampToValueAtTime(0.35 * c.loud, t0 + 0.12);
+  env.gain.linearRampToValueAtTime(0.9 * c.loud, tOpen + 0.1);
+  env.gain.setValueAtTime(0.85 * c.loud, tClose);
+  env.gain.exponentialRampToValueAtTime(0.0001, t1);
+  tract.connect(env).connect(out);
+
+  for (const s of sources) {
+    s.start(t0);
+    s.stop(t1 + 0.05);
+  }
+  return { end: t1, sources };
+}
 
 export class MooPlayer {
   private ctx: AudioContext | null = null;
@@ -51,46 +147,18 @@ export class MooPlayer {
     let end = t;
     for (let i = 0; i < count; i++) {
       end = this.moo(ctx, out, t, c);
-      t = end + 0.12;
+      t = end + 0.18;
     }
     return new Promise((resolve) => setTimeout(resolve, (end - ctx.currentTime) * 1000));
   }
 
   private moo(ctx: AudioContext, out: AudioNode, t0: number, c: Contour): number {
-    const t1 = t0 + c.dur;
-    const osc = ctx.createOscillator();
-    osc.type = "sawtooth";
-    const step = c.dur / (c.f0.length - 1);
-    osc.frequency.setValueAtTime(c.f0[0] ?? 100, t0);
-    c.f0.forEach((f, i) => i > 0 && osc.frequency.linearRampToValueAtTime(f, t0 + i * step));
-    const vib = ctx.createOscillator();
-    vib.frequency.value = 5.5;
-    const vibDepth = ctx.createGain();
-    vibDepth.gain.value = 3;
-    vib.connect(vibDepth).connect(osc.frequency);
-    // Nasal "mmm" opening into "ooo": a lowpass that opens, plus one formant.
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.setValueAtTime(300, t0);
-    lp.frequency.linearRampToValueAtTime(c.formant * 1.6, t0 + c.dur * 0.35);
-    lp.frequency.linearRampToValueAtTime(400, t1);
-    const formant = ctx.createBiquadFilter();
-    formant.type = "peaking";
-    formant.frequency.value = c.formant;
-    formant.gain.value = 8;
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0, t0);
-    env.gain.linearRampToValueAtTime(0.9, t0 + 0.08);
-    env.gain.setValueAtTime(0.8, t1 - 0.25);
-    env.gain.linearRampToValueAtTime(0, t1);
-    osc.connect(lp).connect(formant).connect(env).connect(out);
-    for (const s of [osc, vib]) {
-      s.start(t0);
-      s.stop(t1 + 0.05);
+    const { end, sources } = scheduleMoo(ctx, out, t0, c);
+    for (const s of sources) {
       this.playing.add(s);
       s.onended = () => this.playing.delete(s);
     }
-    return t1;
+    return end;
   }
 
   stopOneShot(): void {
