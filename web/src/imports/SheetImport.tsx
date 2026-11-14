@@ -59,17 +59,19 @@ export function SheetImport({ basketId, onImported, variant = "large", disabled 
     setBusy(true);
     setError(null);
     setStatus("Importing the list: the gateway matches and prices every row…");
+    let response: ImportResponse;
     try {
-      const response = await importSheet(file, basketTarget(basketId));
-      setStatus(response.message_for_user.en);
-      onImported(response);
+      response = await importSheet(file, basketTarget(basketId));
     } catch (e) {
       if (!(e instanceof IntakeError)) console.error(e);
       setError(errorText(e));
       setStatus("");
+      return;
     } finally {
       setBusy(false);
     }
+    setStatus(response.message_for_user.en);
+    onImported(response); // outside the try: a failing page callback is not an import error
   };
 
   const pick = (e: ChangeEvent<HTMLInputElement>) => {
@@ -109,9 +111,10 @@ export function SheetImport({ basketId, onImported, variant = "large", disabled 
   };
 
   const large = variant === "large";
+  // aria-disabled, not disabled, while importing: a disabled button would drop keyboard focus to the page.
   const button = (
-    <button type="button" className={large ? "primary intake-cta" : "primary"} disabled={locked}
-            aria-describedby={hint} onClick={() => input.current?.click()}>
+    <button type="button" className={large ? "primary intake-cta" : "primary"} disabled={disabled}
+            aria-disabled={busy || undefined} aria-describedby={hint} onClick={() => { if (!locked) input.current?.click(); }}>
       {busy ? "Importing…" : "Import list"}
     </button>
   );

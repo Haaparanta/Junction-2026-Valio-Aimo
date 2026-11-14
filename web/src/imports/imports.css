@@ -21,6 +21,14 @@
   border-radius: var(--r);
 }
 .intake-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+/* Busy buttons stay focusable (aria-disabled), so they look disabled here and do not press in. */
+:is(.intake, .intake-drop) button[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
+:is(.intake, .intake-drop) button[aria-disabled="true"]:is(:hover, :active) { transform: none; box-shadow: var(--shadow-sm); }
+:is(.intake, .intake-drop) button.intake-cta[aria-disabled="true"]:is(:hover, :active) { box-shadow: var(--shadow); }
+/* The same focus ring as styles.css, so these controls keep one even where that file is not loaded. */
+:is(.intake, .intake-drop, .intake-summary) :is(button, input, a, summary):focus-visible {
+  outline: 3px dashed var(--blue); outline-offset: 3px;
+}
 button.intake-cta { font-size: 1.05rem; padding: 0.7rem 1.2rem; box-shadow: var(--shadow); }
 .intake-chip { white-space: nowrap; }
 

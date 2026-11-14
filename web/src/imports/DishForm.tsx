@@ -85,16 +85,23 @@ export function DishForm({ basketId, asOf, language, onPlanned, disabled = false
     setBusy(true);
     setError(null);
     setResult(null);
+    let response: DishResponse;
     try {
-      const response = await planDish(buildDishRequest(values, language, basketId));
-      setResult(response);
-      onPlanned(response);
+      response = await planDish(buildDishRequest(values, language, basketId));
     } catch (err) {
       if (!(err instanceof IntakeError)) console.error(err);
       setError(errorText(err));
+      return;
     } finally {
       setBusy(false);
     }
+    setResult(response);
+    // The dish is in the basket: clear its name and servings so a second Send cannot add it twice by accident.
+    // The date and the diet chips stay for the next dish.
+    setDish("");
+    setServings("");
+    setTried(false);
+    onPlanned(response); // outside the try: a failing page callback is not a planning error
   };
 
   const invalid = (field: DishField) =>
@@ -142,7 +149,8 @@ export function DishForm({ basketId, asOf, language, onPlanned, disabled = false
           </p>
         </fieldset>
         <div className="intake-actions intake-wide">
-          <button type="submit" className="primary intake-cta" disabled={busy || disabled}>
+          {/* aria-disabled, not disabled, while planning: a disabled button would drop keyboard focus */}
+          <button type="submit" className="primary intake-cta" disabled={disabled} aria-disabled={busy || undefined}>
             {busy ? "Planning…" : "Add the dish to the basket"}
           </button>
         </div>

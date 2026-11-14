@@ -79,23 +79,26 @@ export function PhotoImport({ basketId, onImported, disabled = false }: PhotoImp
     setFile(problem ? null : chosen);
   };
 
+  const sent = result !== null; // this photo is in the basket: choose another one to send again
+
   const send = async () => {
-    if (!file || busy || disabled) return;
+    if (!file || busy || sent || disabled) return;
     setError(null);
-    setResult(null);
+    let response: ImportResponse;
     try {
       setPhase("preparing");
       const jpeg = await downscaleToJpeg(file);
       setPhase("reading");
-      const response = await importImage(jpeg, basketTarget(basketId));
-      setResult(response);
-      onImported(response);
+      response = await importImage(jpeg, basketTarget(basketId));
     } catch (e) {
       if (!(e instanceof IntakeError || e instanceof PhotoReadError)) console.error(e);
       setError(e instanceof PhotoReadError ? e.message : errorText(e));
+      return;
     } finally {
       setPhase("idle");
     }
+    setResult(response);
+    onImported(response); // outside the try: a failing page callback is not an import error
   };
 
   const status =
@@ -103,7 +106,6 @@ export function PhotoImport({ basketId, onImported, disabled = false }: PhotoImp
     : phase === "reading" ? "Reading the list…"
     : result ? result.message_for_user.en
     : "";
-  const sent = result !== null; // this photo is in the basket: choose another one to send again
   return (
     <section className="card intake intake-photo" aria-labelledby={heading} aria-busy={busy}>
       <h2 id={heading}>Photo to basket</h2>
@@ -133,7 +135,9 @@ export function PhotoImport({ basketId, onImported, disabled = false }: PhotoImp
       )}
       {file && (
         <div className="intake-actions">
-          <button type="button" className="primary intake-cta" disabled={busy || disabled || sent} onClick={() => void send()}>
+          {/* aria-disabled, not disabled, while sending and once sent: a disabled button would drop keyboard focus */}
+          <button type="button" className="primary intake-cta" disabled={disabled} aria-disabled={busy || sent || undefined}
+                  onClick={() => void send()}>
             {busy ? "Sending…" : sent ? "Sent" : "Send"}
           </button>
         </div>
