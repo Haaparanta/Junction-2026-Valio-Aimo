@@ -254,6 +254,11 @@ def sha(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
 
+def vat_of(net: Decimal, rate: Decimal) -> Decimal:
+    """VAT on a line's net total, rounded half-up to cents (F-06)."""
+    return (net * rate / 100).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
 def invented_warnings(ids: Iterable[str | None]) -> list[str]:
     """One 'stub: invented catalogue values' warning per invented row a response shows."""
     shown = {i for i in ids if i and i in PRODUCTS and PRODUCTS[i].invented}
@@ -719,7 +724,7 @@ class StubState:
             if q is None:
                 qty = o.qty
                 line_net = p.price * qty
-                line_vat = (line_net * p.vat / 100).quantize(CENT, rounding=ROUND_HALF_UP)
+                line_vat = vat_of(line_net, p.vat)
                 issued = datetime.fromisoformat(as_of)
                 q = Quote(
                     quote_id=quote_id,

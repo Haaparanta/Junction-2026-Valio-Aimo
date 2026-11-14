@@ -27,6 +27,7 @@ ReasonCode = Literal[
     "not_found",
     "basket_incomplete",  # quote_basket while a line is not priced; the answer lists those lines
     "quote_stale",  # confirm or place_order on a quote whose basket changed after it was made
+    "basket_locked",  # a change to an ordered basket; a new basket is needed
 ]
 OfferFlag = Literal[
     "CUTOFF_PASSED",

@@ -1,7 +1,7 @@
-"""SQLite store for web logins, voice session bindings and post-call payloads.
+"""SQLite store for web logins, voice session bindings, post-call payloads and baskets.
 
 One short-lived connection per operation: FastAPI runs sync code on worker threads, and SQLite
-connections are thread-bound (tech-research §7).
+connections are thread-bound (tech-research §7). Read-modify-write goes through tx() (BEGIN IMMEDIATE).
 """
 
 import hashlib
@@ -28,6 +28,24 @@ CREATE TABLE IF NOT EXISTS voice_session (
 CREATE TABLE IF NOT EXISTS conversation (
   conversation_id TEXT PRIMARY KEY, agent_id TEXT, event_type TEXT NOT NULL,
   payload TEXT NOT NULL, received_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS basket (     -- docs/basket-plan.md B-02; the SQL lives in basket.py
+  basket_id TEXT PRIMARY KEY, buyer_id TEXT NOT NULL,
+  conversation_id TEXT,                 -- the voice call that started it: 'new' again in that call reuses it
+  status TEXT NOT NULL,                 -- open | ordered (read-only)
+  version INTEGER NOT NULL,             -- goes up on every change; a quote records the version it priced
+  next_line_id INTEGER NOT NULL,        -- line ids are 1, 2, 3 ... per basket and never reused
+  quote_id TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS basket_by_buyer ON basket (buyer_id, status);
+CREATE TABLE IF NOT EXISTS basket_line (
+  basket_id TEXT NOT NULL, line_id INTEGER NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,    -- 0 after remove; restore sets it back (undo)
+  draft TEXT NOT NULL,                  -- JSON: what the line asks for, so it can always be priced again
+  priced TEXT NOT NULL,                 -- JSON: the last priced snapshot
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  PRIMARY KEY (basket_id, line_id)
 );
 """
 
@@ -64,6 +82,21 @@ class Store:
             yield c
         finally:
             c.close()
+
+    @contextmanager
+    def tx(self, mode: str = "IMMEDIATE") -> Iterator[sqlite3.Connection]:
+        """One transaction. IMMEDIATE (every read-modify-write) takes the write lock first, so versions and ids
+        never race; DEFERRED gives a read a consistent snapshot."""
+        if mode not in ("IMMEDIATE", "DEFERRED"):
+            raise ValueError(mode)
+        with self.conn() as c:
+            c.execute(f"BEGIN {mode}")
+            try:
+                yield c
+            except BaseException:
+                c.execute("ROLLBACK")
+                raise
+            c.execute("COMMIT")
 
     # ---- web login (demo buyers) ----
     def create_web_session(self, buyer_id: str, ttl_s: int) -> str:
