@@ -1,13 +1,18 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useConversationControls } from "@elevenlabs/react";
-import { api, errorText, eur, helsinki, type Offer, type OrderResponse, type QuoteLine } from "../api";
+import { api, errorText, eur, helsinki, type Offer, type Order, type OrderResponse, type QuoteLine } from "../api";
+import { APPROVAL_NUDGE, approvalNote, buyerOutcome, isFinal } from "../approvals/approvals";
+import "../approvals/approvals.css";
+import { AuditTimeline } from "../approvals/AuditTimeline";
+import { Reason } from "../approvals/Reason";
+import { when } from "../approvals/timeline";
 import { personaName } from "../persona";
 import { answerConfirmation } from "../voice/ClientTools";
 import { basketNote, quoteNote } from "../voice/notes";
 import { focusBasket, quoteLoaded, showToast, ui, useUi } from "../voice/store";
 import { useAgentNote } from "../voice/useAgentNote";
 import { applyBasket, goToBasketLine, hasBasket, quoteBasketNow, refreshBasket } from "./actions";
-import { flagLabel, orderRequestMessage, parseReason, quoteIsStale, refusal } from "./basket";
+import { flagLabel, orderRequestMessage, quoteIsStale, refusal } from "./basket";
 import { ProductButton } from "./ProductDetails";
 import { useFetch } from "./useFetch";
 
@@ -173,6 +178,7 @@ export function QuoteCard({ onAsk }: { onAsk: (text: string) => void }) {
   const callActive = useUi((s) => s.phase === "live" || s.phase === "connecting");
   const basket = useUi((s) => s.basket);
   const order = useUi((s) => (s.order && s.order.quoteId === s.quoteId ? s.order : null));
+  const viaApproval = useUi((s) => s.approvalId !== null); // the approval card shows that order's timeline
   const name = personaName(useUi((s) => s.persona));
   const { data, error, reload } = useFetch(id, api.quote);
   const q = data && data.quote_id === id ? data : null;
@@ -323,6 +329,7 @@ export function QuoteCard({ onAsk }: { onAsk: (text: string) => void }) {
           {order.message.en}
         </p>
       )}
+      {order?.orderId && !viaApproval && <AuditTimeline orderId={order.orderId} version={order.status} />}
       {stale && !order && (
         <div className="stale-box" role="alert">
           <p><strong>Out of date.</strong> The basket changed after this quote, so its prices no longer hold.</p>
@@ -365,63 +372,88 @@ export function QuoteCard({ onAsk }: { onAsk: (text: string) => void }) {
   );
 }
 
-/**
- * One approval reason, "OVER_ORDER_CAP: EUR 1010.00 is above …": a button with the plain title that expands to the
- * gateway's detail and the code (M24.8). Enter or Space toggles it, Escape folds it again.
- */
-function Reason({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  const id = `reason-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const r = parseReason(text);
-  if (!r.code) return <>{text}</>;
+/** The order's facts from GET /v1/orders/{id}: number, totals, delivery, and the signed receipt when there is one. */
+function OrderFacts({ o }: { o: Order }) {
   return (
     <>
-      <button type="button" className="link reason-btn" aria-expanded={open} aria-controls={id}
-              onClick={() => setOpen((o) => !o)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape" && open) {
-                  e.stopPropagation();
-                  setOpen(false);
-                }
-              }}>
-        {open ? "▾" : "▸"} {r.title}
-      </button>
-      <div id={id} className="reason-detail" hidden={!open}>
-        {r.detail && <p>{r.detail}</p>}
-        <p className="muted">Code <code>{r.code}</code></p>
-      </div>
+      <dl className="order-facts">
+        <dt>Order</dt><dd><code>{o.order_id}</code></dd>
+        <dt>Total</dt><dd>{eur(o.total_gross)} incl. VAT · {eur(o.total_net)} excl.</dd>
+        <dt>Delivery</dt><dd>{o.delivery_date}</dd>
+      </dl>
+      {o.receipt_jws && (
+        <details className="receipt">
+          <summary>✓ Signed receipt (JWS)</summary>
+          <code>{o.receipt_jws}</code>
+          <p className="muted">Verifiable against the gateway's public keys at /.well-known/jwks.json.</p>
+        </details>
+      )}
     </>
   );
 }
 
-/** Polls the approval every 2 s; on a change, tells the agent silently and nudges it (PLAN M9.4). */
+/**
+ * Polls the approval every 2 s until it is decided (PLAN M9.2). On a change, during a call, it tells the agent
+ * silently and nudges it, so the agent announces the gateway's result (M9.4); without a call the buyer simply
+ * sees the new state: the order, its totals, the approver's comment and what happened.
+ */
 export function ApprovalCard() {
   const id = useUi((s) => s.approvalId);
   const live = useUi((s) => s.phase === "live");
-  const { data: a, error } = useFetch(id, api.approval, 2000);
+  const [decided, setDecided] = useState(false);
+  const { data, error } = useFetch(id, api.approval, decided ? undefined : 2000);
+  const a = data && data.approval_id === id ? data : null;
+  const { data: od, reload: reloadOrder } = useFetch(a?.approval.order_id ?? null, api.order);
   const { sendContextualUpdate, sendUserMessage } = useConversationControls();
   const last = useRef<string | null>(null);
+  const version = a ? `${a.status}|${a.reason_code ?? ""}` : "";
   useEffect(() => {
+    setDecided(!!a && isFinal(a.status));
     if (!a) return;
     const prev = last.current;
-    last.current = a.status;
-    if (prev && prev !== a.status && live) {
-      try {
-        sendContextualUpdate(`Order ${a.approval.order_id} status changed to ${a.status} (approval ${a.approval_id}).`);
-        sendUserMessage("Is there news about my order?");
-      } catch { /* call ended */ }
+    last.current = version;
+    if (a.status === "completed") {
+      const done = { quoteId: a.approval.quote_id, orderId: a.approval.order_id, status: "completed", message: a.message_for_user };
+      ui.set((s) => (s.order?.status === "completed" && s.order.orderId === done.orderId ? {} : { order: done }));
     }
-  }, [a, live, sendContextualUpdate, sendUserMessage]);
+    if (!prev || prev === version) return;
+    reloadOrder();
+    if (!live) return;
+    try {
+      sendContextualUpdate(approvalNote(a));
+      sendUserMessage(APPROVAL_NUDGE);
+    } catch { /* call ended */ }
+  }, [a, version, live, reloadOrder, sendContextualUpdate, sendUserMessage]);
   if (!id) return null;
-  if (error) return <p className="card error">Could not load the approval: {error}</p>;
+  if (error && !a) return <p className="card error">Could not load the approval: {error}</p>;
   if (!a) return <p className="card">Loading approval…</p>;
+  const order = od?.order && od.order.order_id === a.approval.order_id ? od.order : null;
+  const view = buyerOutcome(a);
+  const pending = !isFinal(a.status);
+  const tier = a.status === "completed" ? "Order placed" : a.status === "canceled" ? "Not ordered" : "Needs approval";
   return (
     <section className={`card approval status-${a.status}`} aria-label="Approval">
-      <header><span className="tier">Needs approval</span><span className="pid">{a.approval_id}</span></header>
-      <p className="big">⏳ {a.message_for_user.en}</p>
-      <ul className="reasons">{a.approval.reasons.map((r) => <li key={r}><Reason text={r} /></li>)}</ul>
-      <p>Decide by {helsinki(a.approval.decide_by)} · approver: {a.approval.approver_role.replace("_", " ")}</p>
-      <p className="muted">Approvals happen only on the manager's own console. Nobody can approve by voice.</p>
+      <header><span className="tier">{tier}</span><span className="pid">{a.approval_id}</span></header>
+      {pending && !a.reason_code ? (
+        <p className="big">⏳ {a.message_for_user.en}</p>
+      ) : (
+        <div role="status">
+          <p className="big">{a.status === "completed" ? "✓ " : pending ? "⚠ " : "✕ "}{view.title}</p>
+          {view.detail && view.detail !== view.title && <p>{view.detail}</p>}
+        </div>
+      )}
+      {view.comment && (
+        <blockquote className="approver-comment"><strong>Approver's comment:</strong> {view.comment}</blockquote>
+      )}
+      {order && !pending && <OrderFacts o={order} />}
+      {pending && (
+        <>
+          <ul className="reasons">{a.approval.reasons.map((r) => <li key={r}><Reason text={r} /></li>)}</ul>
+          <p>Decide by {when(a.approval.decide_by)} · approver: {a.approval.approver_role.replace("_", " ")}</p>
+          <p className="muted">Approvals happen only on the manager's own console. Nobody can approve by voice.</p>
+        </>
+      )}
+      <AuditTimeline orderId={a.approval.order_id} version={version} />
     </section>
   );
 }
