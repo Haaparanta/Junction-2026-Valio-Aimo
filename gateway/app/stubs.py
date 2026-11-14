@@ -449,6 +449,7 @@ class StubState:
                             vat_rate=str(VAT),
                             line_vat=money(line_vat),
                             line_gross=money(line_net + line_vat),
+                            delivery_date=o.delivery_date,
                         )
                     ],
                     total_net=money(line_net),
