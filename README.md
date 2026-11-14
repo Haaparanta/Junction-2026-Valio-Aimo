@@ -39,7 +39,13 @@ The script needs the challenge API key:
 
 Never commit the key.
 
+## Live demo
+
+https://valio-aimo-854901616539.europe-north1.run.app runs on Cloud Run in europe-north1. Sign in as Chef Aada, then press **Talk to Aino**, or type to start a text chat. Deploying and pointing the agent at the service are described in [docs/deploy.md](docs/deploy.md).
+
 ## Run the voice slice
+
+To develop locally, use the steps below. The agent follows whatever host `provision.py push` last set, so pushing a tunnel host takes it away from Cloud Run until you push the Cloud Run host again.
 
 You need uv, pnpm 12, Node 22+, ngrok and an ElevenLabs account. Keys live only in git-ignored files:
 
