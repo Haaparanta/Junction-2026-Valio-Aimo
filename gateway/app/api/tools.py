@@ -5,9 +5,9 @@ Operations tagged "agent-tools" become ElevenLabs webhook tools (agent/provision
 """
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Path
 
 from ..contract import (
     ApprovalResponse,
@@ -30,38 +30,15 @@ from ..contract import (
     SubstitutesResponse,
 )
 from ..identity import CallerDep, SettingsDep, WebBuyerDep
-from ..stubs import StubState, get_product, plan_quantity, search, substitutes
+from ..stubs import get_product, plan_quantity, search, substitutes
+from . import baskets
+from .common import AGENT, StateDep, not_found, tool
 
 router = APIRouter(prefix="/v1")
-AGENT = ["agent-tools"]
 ProductIdPath = Annotated[
     str, Path(pattern=r"^\d{6}$", description="Six-digit product id exactly as a tool returned it.")
 ]
 OrderIdPath = Annotated[str, Path(min_length=3, max_length=80, description="order_id exactly as place_order returned.")]
-
-
-def state(request: Request) -> StubState:
-    return request.app.state.stubs
-
-
-StateDep = Annotated[StubState, Depends(state)]
-COMMON = ["status", "reason_code", "message_for_user", "warnings"]
-
-
-def tool(description: str, *, filters: list[str], timeout: int = 10, **voice: Any) -> dict:
-    """OpenAPI extension read by agent/provision.py."""
-    return {
-        "x-agent-tool": {
-            "description": description,
-            "response_filter": COMMON + filters,
-            "response_timeout_secs": timeout,
-            **voice,
-        }
-    }
-
-
-def not_found(what: str) -> HTTPException:
-    return HTTPException(404, f"{what} not found")
 
 
 @router.post(
@@ -254,5 +231,7 @@ def get_approval(
         raise not_found("approval")
     return res
 
+
+router.include_router(baskets.router)  # /v1/baskets/...: same agent and UI rules, its own module
 
 __all__ = ["router", "Msg"]

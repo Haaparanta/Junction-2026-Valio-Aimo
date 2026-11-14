@@ -1,0 +1,135 @@
+{
+  "type": "webhook",
+  "name": "add_to_basket",
+  "description": "Add one need (what, how much, by when) to a basket. The gateway prices it, picks the best offer and keeps the alternatives. Use basket_id 'new' only for the first item, then always the basket_id this tool returned. Fill heads, exclude, must_claims and must_not_allergens as for get_offers. Read message_for_user and never state a number that is not in this result. Then call show_basket with the basket_id.",
+  "response_timeout_secs": 20,
+  "tool_error_handling_mode": "passthrough",
+  "pre_tool_speech": "force",
+  "interruption_mode": "allow",
+  "api_schema": {
+    "url": "https://{{system__env_gateway_host}}/v1/baskets/lines",
+    "method": "POST",
+    "request_headers": {
+      "X-Gateway-Key": {
+        "secret_id": "<gateway_platform_key secret id>"
+      },
+      "X-Conversation-Id": {
+        "variable_name": "system__conversation_id"
+      },
+      "X-Session-Token": {
+        "variable_name": "secret__session_token"
+      }
+    },
+    "response_filter": {
+      "mode": "allow",
+      "filters": [
+        "status",
+        "reason_code",
+        "message_for_user",
+        "warnings",
+        "basket_id",
+        "basket",
+        "line"
+      ]
+    },
+    "content_type": "application/json",
+    "request_body_schema": {
+      "type": "object",
+      "description": "Arguments for add_to_basket.",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The buyer's need in their own words, Finnish or English."
+        },
+        "heads": {
+          "type": "array",
+          "description": "Product-type heads the name must end with, in Finnish base form, e.g. ['maito', 'maitojuoma'].",
+          "items": {
+            "type": "string",
+            "description": "One item of: Product-type heads the name must end with, in Finnish base form, e.g. ['maito', 'maitojuoma']."
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Words that must not appear in the name, e.g. ['kaakao', 'jäätelö'].",
+          "items": {
+            "type": "string",
+            "description": "One item of: Words that must not appear in the name, e.g. ['kaakao', 'jäätelö']."
+          }
+        },
+        "must_claims": {
+          "type": "array",
+          "description": "GS1 claims every result must carry, e.g. ['FREE_FROM_LACTOSE'].",
+          "items": {
+            "type": "string",
+            "description": "One item of: GS1 claims every result must carry, e.g. ['FREE_FROM_LACTOSE']."
+          }
+        },
+        "must_not_allergens": {
+          "type": "array",
+          "description": "GS1 allergen codes every result must be free of, e.g. ['AM'] for milk.",
+          "items": {
+            "type": "string",
+            "description": "One item of: GS1 allergen codes every result must be free of, e.g. ['AM'] for milk."
+          }
+        },
+        "temperature": {
+          "type": "string",
+          "description": "Temperature class wanted, or 'any'. Default: \"any\".",
+          "enum": [
+            "any",
+            "chilled",
+            "frozen",
+            "ambient"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of products to return. Default: 10."
+        },
+        "amount": {
+          "type": "number",
+          "description": "How much the buyer needs, as a number."
+        },
+        "unit": {
+          "type": "string",
+          "description": "Unit of the amount: litres, kilograms or pieces.",
+          "enum": [
+            "L",
+            "KG",
+            "PCS"
+          ]
+        },
+        "need_date": {
+          "type": "string",
+          "description": "Delivery date the buyer needs, YYYY-MM-DD (Europe/Helsinki)."
+        },
+        "preference": {
+          "type": "string",
+          "description": "How to rank feasible options. Default: \"cheapest\".",
+          "enum": [
+            "cheapest",
+            "greenest",
+            "most_reliable"
+          ]
+        },
+        "allow_variants": {
+          "type": "boolean",
+          "description": "True only if the buyer accepted variants such as coffee milk or portion cups. Default: false."
+        },
+        "basket_id": {
+          "type": "string",
+          "description": "basket_id exactly as a basket tool returned it, or 'new' to start a new basket."
+        }
+      },
+      "required": [
+        "query",
+        "amount",
+        "unit",
+        "need_date",
+        "basket_id"
+      ]
+    }
+  },
+  "tool_call_sound": "typing"
+}

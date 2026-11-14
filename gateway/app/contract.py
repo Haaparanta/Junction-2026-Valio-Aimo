@@ -408,6 +408,17 @@ class BasketRequest(_Request):
     basket_id: str = BASKET_ID_FIELD
 
 
+class FromOfferRequest(_Request):
+    """The UI's Add to basket (replace_line_id 0) or Replace line N on an option card."""
+
+    offer_id: str = Field(
+        min_length=3, max_length=80, description="offer_id of an option card, exactly as get_offers returned it."
+    )
+    replace_line_id: int = Field(
+        default=0, ge=0, le=10_000, description="0 adds a new line; otherwise the line_id whose product this replaces."
+    )
+
+
 class FlagNote(BaseModel):
     """What one flag means for the buyer, shown on the line's chip and read by the agent."""
 

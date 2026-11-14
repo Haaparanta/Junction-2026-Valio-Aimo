@@ -11,6 +11,10 @@ AGENT_TOOLS = {
     "get_order",
     "get_approval",
     "cancel_order",
+    "add_to_basket",
+    "get_basket",
+    "update_basket_line",
+    "remove_basket_line",
 }
 
 
@@ -45,6 +49,11 @@ def test_agent_request_schemas_are_flat_and_described(settings):
         "CreateQuoteRequest",
         "PlaceOrderRequest",
         "CancelOrderRequest",
+        "AddToBasketRequest",
+        "UpdateBasketLineRequest",
+        "BasketLineRequest",
+        "BasketLinePatch",
+        "FromOfferRequest",
     ]:
         for prop, s in schemas[name]["properties"].items():
             assert "anyOf" not in s, (name, prop)

@@ -1,0 +1,41 @@
+{
+  "type": "webhook",
+  "name": "get_basket",
+  "description": "Get a basket: its lines with their status, chosen offer and alternatives, and the gateway totals. Read message_for_user; lines that need a choice or an amount are named there. Never state a number that is not in this result.",
+  "response_timeout_secs": 10,
+  "tool_error_handling_mode": "passthrough",
+  "pre_tool_speech": "auto",
+  "interruption_mode": "allow",
+  "api_schema": {
+    "url": "https://{{system__env_gateway_host}}/v1/baskets/{basket_id}",
+    "method": "GET",
+    "request_headers": {
+      "X-Gateway-Key": {
+        "secret_id": "<gateway_platform_key secret id>"
+      },
+      "X-Conversation-Id": {
+        "variable_name": "system__conversation_id"
+      },
+      "X-Session-Token": {
+        "variable_name": "secret__session_token"
+      }
+    },
+    "response_filter": {
+      "mode": "allow",
+      "filters": [
+        "status",
+        "reason_code",
+        "message_for_user",
+        "warnings",
+        "basket_id",
+        "basket"
+      ]
+    },
+    "path_params_schema": {
+      "basket_id": {
+        "type": "string",
+        "description": "basket_id exactly as a basket tool returned it. Never invent or edit it."
+      }
+    }
+  }
+}
